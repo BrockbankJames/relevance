@@ -6,4 +6,3 @@ numpy==1.24.3
 requests==2.31.0
 beautifulsoup4==4.12.2
 scikit-learn==1.3.2
-scrapingbee==1.0.0 
