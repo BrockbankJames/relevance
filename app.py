@@ -46,14 +46,31 @@ def scrape_webpage(url):
         # Encode the URL
         encoded_url = urllib.parse.quote(url)
         
-        # Make the request to ScrapingBee API
-        api_url = f"https://app.scrapingbee.com/api/v1/?api_key={api_key}&url={encoded_url}&render_js=false&block_resources=true"
-        response = requests.get(api_url)
+        # Make the request to ScrapingBee API with enhanced parameters
+        params = {
+            'api_key': api_key,
+            'url': encoded_url,
+            'render_js': 'true',  # Enable JavaScript rendering
+            'premium_proxy': 'true',  # Use premium proxy
+            'wait': '5000',  # Wait 5 seconds for JS to load
+            'wait_for': 'body',  # Wait for body to be present
+            'block_resources': 'true'  # Block unnecessary resources
+        }
+        
+        api_url = "https://app.scrapingbee.com/api/v1/"
+        response = requests.get(api_url, params=params)
         
         if response.status_code != 200:
             st.error(f"Error scraping webpage: HTTP {response.status_code}")
             if response.text:
-                st.error(f"API Error: {response.text}")
+                try:
+                    error_data = response.json()
+                    if 'error' in error_data:
+                        st.error(f"API Error: {error_data['error']}")
+                        if 'reason' in error_data:
+                            st.error(f"Reason: {error_data['reason']}")
+                except:
+                    st.error(f"API Error: {response.text}")
             return None
         
         # Parse the HTML content
@@ -151,4 +168,4 @@ with tab2:
 
 # Add footer
 st.markdown("---")
-st.markdown("Built with Streamlit and Google's Universal Sentence Encoder")
+st.markdown("Built with Streamlit and Google's Universal Sentence Encoder") 
