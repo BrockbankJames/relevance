@@ -2,9 +2,9 @@ import streamlit as st
 import tensorflow_hub as hub
 import tensorflow_text
 import numpy as np
+import requests
 from bs4 import BeautifulSoup
 from sklearn.metrics.pairwise import cosine_similarity
-from scrapingbee import ScrapingBeeClient
 import urllib.parse
 import json
 
@@ -43,23 +43,17 @@ def scrape_webpage(url):
         return None
     
     try:
-        # Initialize the ScrapingBee client
-        client = ScrapingBeeClient(api_key=api_key)
-        
         # Encode the URL
         encoded_url = urllib.parse.quote(url)
         
-        # Make the request
-        response = client.get(
-            encoded_url,
-            params={
-                'render_js': 'false',
-                'block_resources': 'true'
-            }
-        )
+        # Make the request to ScrapingBee API
+        api_url = f"https://app.scrapingbee.com/api/v1/?api_key={api_key}&url={encoded_url}&render_js=false&block_resources=true"
+        response = requests.get(api_url)
         
         if response.status_code != 200:
             st.error(f"Error scraping webpage: HTTP {response.status_code}")
+            if response.text:
+                st.error(f"API Error: {response.text}")
             return None
         
         # Parse the HTML content
