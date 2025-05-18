@@ -112,7 +112,7 @@ def calculate_similarity(embedding1, embedding2):
     return cosine_similarity([embedding1], [embedding2])[0][0]
 
 # Create tabs for different input methods
-tab1, tab2 = st.tabs(["Keyword Embedding", "Webpage Analysis"])
+tab1, tab2, tab3 = st.tabs(["Keyword Embedding", "Webpage Analysis", "Link Profile Analysis"])
 
 with tab1:
     st.subheader("Generate Embedding for Keyword")
@@ -187,6 +187,108 @@ with tab2:
                 """)
             else:
                 st.info("Enter a keyword in the first tab to analyze similarities with webpage content.")
+
+with tab3:
+    st.subheader("Analyze Multiple URLs")
+    st.markdown("""
+    Enter a list of URLs (one per line) to analyze their relevance to your keyword.
+    The app will analyze each URL and show:
+    - Average relevance across all URLs
+    - Most relevant URLs ranked by similarity
+    - Individual URL scores
+    """)
+    
+    # Get URLs input
+    urls_input = st.text_area(
+        "Enter URLs (one per line):",
+        height=150,
+        placeholder="https://example1.com\nhttps://example2.com\nhttps://example3.com"
+    )
+    
+    if urls_input and 'keyword_embedding' in locals():
+        # Process URLs
+        urls = [url.strip() for url in urls_input.split('\n') if url.strip()]
+        
+        if urls:
+            # Store results for each URL
+            url_results = []
+            
+            # Process each URL
+            with st.spinner(f"Analyzing {len(urls)} URLs..."):
+                for url in urls:
+                    try:
+                        # Scrape and analyze the URL
+                        sections = scrape_webpage(url)
+                        if sections:
+                            # Generate embeddings for all sections
+                            section_embeddings = []
+                            for section in sections:
+                                embedding = get_embedding(section['text'])
+                                section_embeddings.append(embedding)
+                            
+                            # Average section embeddings
+                            avg_section_embedding = np.mean(section_embeddings, axis=0)
+                            
+                            # Calculate similarity
+                            similarity = calculate_similarity(keyword_embedding, avg_section_embedding)
+                            
+                            url_results.append({
+                                'url': url,
+                                'similarity': similarity,
+                                'sections_count': len(sections)
+                            })
+                    except Exception as e:
+                        st.warning(f"Error processing {url}: {str(e)}")
+            
+            if url_results:
+                # Sort URLs by similarity
+                url_results.sort(key=lambda x: x['similarity'], reverse=True)
+                
+                # Calculate average similarity
+                avg_similarity = np.mean([r['similarity'] for r in url_results])
+                
+                # Display overall results
+                st.subheader("Overall Results")
+                st.metric(
+                    label="Average Profile Relevance",
+                    value=f"{avg_similarity:.3f}",
+                    help="Average similarity across all analyzed URLs"
+                )
+                
+                # Display top 3 most relevant URLs
+                st.subheader("Most Relevant URLs")
+                for i, result in enumerate(url_results[:3], 1):
+                    st.markdown(f"""
+                    **{i}. {result['url']}**  
+                    Similarity: {result['similarity']:.3f}  
+                    Sections analyzed: {result['sections_count']}
+                    """)
+                
+                # Display all URLs in a table
+                st.subheader("All URLs Analysis")
+                # Create a DataFrame for better display
+                import pandas as pd
+                df = pd.DataFrame(url_results)
+                df['similarity'] = df['similarity'].round(3)
+                df = df.rename(columns={
+                    'url': 'URL',
+                    'similarity': 'Similarity Score',
+                    'sections_count': 'Sections Analyzed'
+                })
+                st.dataframe(df, use_container_width=True)
+                
+                # Add download button for the results
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="Download Results as CSV",
+                    data=csv,
+                    file_name="url_analysis_results.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.error("No URLs were successfully analyzed. Please check the URLs and try again.")
+    elif urls_input and 'keyword_embedding' not in locals():
+        st.info("Please enter a keyword in the first tab before analyzing URLs.")
 
 # Add footer
 st.markdown("---")
