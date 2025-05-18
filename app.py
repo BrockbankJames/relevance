@@ -162,23 +162,29 @@ with tab2:
                     embedding = get_embedding(section['text'])
                     section_embeddings.append(embedding)
             
-            # If we have a keyword embedding from tab1, calculate similarities
+            # If we have a keyword embedding from tab1, calculate similarity
             if 'keyword_embedding' in locals():
                 st.subheader("Similarity Analysis")
                 
-                # Calculate similarities for each section
-                similarities = []
-                for embedding in section_embeddings:
-                    similarity = calculate_similarity(keyword_embedding, embedding)
-                    similarities.append(similarity)
+                # Average all section embeddings
+                avg_section_embedding = np.mean(section_embeddings, axis=0)
                 
-                # Calculate and display average similarity
-                avg_similarity = np.mean(similarities)
+                # Calculate single cosine similarity between keyword and averaged section embeddings
+                similarity = calculate_similarity(keyword_embedding, avg_section_embedding)
+                
+                # Display the similarity score
                 st.metric(
                     label="Page Similarity Score",
-                    value=f"{avg_similarity:.3f}",
-                    help="Cosine similarity between the keyword and webpage content (range: -1 to 1)"
+                    value=f"{similarity:.3f}",
+                    help="Cosine similarity between the keyword and the average of all webpage content embeddings (range: -1 to 1)"
                 )
+                
+                # Add explanation
+                st.info("""
+                This similarity score is calculated by:
+                1. Averaging all section embeddings from the webpage
+                2. Computing cosine similarity between the keyword embedding and the averaged webpage embedding
+                """)
             else:
                 st.info("Enter a keyword in the first tab to analyze similarities with webpage content.")
 
