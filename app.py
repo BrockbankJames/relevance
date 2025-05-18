@@ -5,12 +5,7 @@ import numpy as np
 import requests
 from bs4 import BeautifulSoup
 from sklearn.metrics.pairwise import cosine_similarity
-import os
-from dotenv import load_dotenv
 import json
-
-# Load environment variables
-load_dotenv()
 
 # Set page config
 st.set_page_config(
@@ -41,9 +36,9 @@ def get_embedding(text):
 
 def scrape_webpage(url):
     """Scrape webpage content using ScrapingBee API"""
-    api_key = os.getenv('SCRAPINGBEE_API_KEY')
+    api_key = st.secrets["SCRAPINGBEE_API_KEY"]  # Use Streamlit secrets instead of os.getenv
     if not api_key:
-        st.error("ScrapingBee API key not found. Please set SCRAPINGBEE_API_KEY in your .env file.")
+        st.error("ScrapingBee API key not found. Please add it to your Streamlit secrets.")
         return None
     
     params = {
