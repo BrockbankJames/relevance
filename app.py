@@ -43,19 +43,32 @@ def scrape_webpage(url):
         return None
     
     try:
-        # Encode the URL
-        encoded_url = urllib.parse.quote(url)
+        # Clean and validate URL
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        
+        # Encode the URL properly
+        encoded_url = urllib.parse.quote(url, safe=':/?=&')
+        
+        # Log the request details (for debugging)
+        st.write("Debug info (will be removed in production):")
+        st.write(f"Original URL: {url}")
+        st.write(f"Encoded URL: {encoded_url}")
         
         # Make the request to ScrapingBee API with enhanced parameters
         params = {
             'api_key': api_key,
             'url': encoded_url,
-            'render_js': 'true',  # Enable JavaScript rendering
-            'premium_proxy': 'true',  # Use premium proxy
-            'wait': '5000',  # Wait 5 seconds for JS to load
-            'wait_for': 'body',  # Wait for body to be present
-            'block_resources': 'true'  # Block unnecessary resources
+            'render_js': 'true',
+            'premium_proxy': 'true',
+            'wait': '5000',
+            'wait_for': 'body',
+            'block_resources': 'true'
         }
+        
+        # Log the full API URL (without the API key)
+        debug_url = f"https://app.scrapingbee.com/api/v1/?url={encoded_url}&render_js=true&premium_proxy=true"
+        st.write(f"API URL (without key): {debug_url}")
         
         api_url = "https://app.scrapingbee.com/api/v1/"
         response = requests.get(api_url, params=params)
@@ -70,7 +83,7 @@ def scrape_webpage(url):
                         if 'reason' in error_data:
                             st.error(f"Reason: {error_data['reason']}")
                 except:
-                    st.error(f"API Error: {response.text}")
+                    st.error(f"Raw API Response: {response.text}")
             return None
         
         # Parse the HTML content
@@ -85,6 +98,9 @@ def scrape_webpage(url):
                     'type': tag.name,
                     'text': text
                 })
+        
+        if not sections:
+            st.warning("No content sections found on the page. The page might be blocking access or have no text content.")
         
         return sections
     except Exception as e:
