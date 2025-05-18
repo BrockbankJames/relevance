@@ -2,9 +2,10 @@ import streamlit as st
 import tensorflow_hub as hub
 import tensorflow_text
 import numpy as np
-import requests
 from bs4 import BeautifulSoup
 from sklearn.metrics.pairwise import cosine_similarity
+from scrapingbee import ScrapingBeeClient
+import urllib.parse
 import json
 
 # Set page config
@@ -36,30 +37,33 @@ def get_embedding(text):
 
 def scrape_webpage(url):
     """Scrape webpage content using ScrapingBee API"""
-    api_key = st.secrets["SCRAPINGBEE_API_KEY"]  # Use Streamlit secrets instead of os.getenv
+    api_key = st.secrets["SCRAPINGBEE_API_KEY"]
     if not api_key:
         st.error("ScrapingBee API key not found. Please add it to your Streamlit secrets.")
         return None
     
-    params = {
-        'api_key': api_key,
-        'url': url,
-        'render_js': 'false',
-        'extract_rules': json.dumps({
-            'content': {
-                'selector': 'body',
-                'type': 'text'
-            }
-        })
-    }
-    
     try:
-        response = requests.get('https://app.scrapingbee.com/api/v1/', params=params)
-        response.raise_for_status()
-        data = response.json()
+        # Initialize the ScrapingBee client
+        client = ScrapingBeeClient(api_key=api_key)
+        
+        # Encode the URL
+        encoded_url = urllib.parse.quote(url)
+        
+        # Make the request
+        response = client.get(
+            encoded_url,
+            params={
+                'render_js': 'false',
+                'block_resources': 'true'
+            }
+        )
+        
+        if response.status_code != 200:
+            st.error(f"Error scraping webpage: HTTP {response.status_code}")
+            return None
         
         # Parse the HTML content
-        soup = BeautifulSoup(data['content'], 'html.parser')
+        soup = BeautifulSoup(response.content, 'html.parser')
         
         # Extract sections (h tags and p tags)
         sections = []
@@ -153,4 +157,4 @@ with tab2:
 
 # Add footer
 st.markdown("---")
-st.markdown("Built with Streamlit and Google's Universal Sentence Encoder") 
+st.markdown("Built with Streamlit and Google's Universal Sentence Encoder")
