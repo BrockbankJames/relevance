@@ -45,29 +45,6 @@ def debug_log(message):
     if DEBUG:
         st.write(f"Debug: {message}")
 
-# Cache for embeddings to reduce API calls
-@st.cache_data(ttl=3600)  # Cache for 1 hour
-def get_cached_embedding(text):
-    """Get embedding from cache or generate new one"""
-    # Create a hash of the text for caching
-    text_hash = hashlib.md5(text.encode()).hexdigest()
-    
-    # Check if we have a cached embedding
-    if 'embeddings_cache' not in st.session_state:
-        st.session_state.embeddings_cache = {}
-    
-    if text_hash in st.session_state.embeddings_cache:
-        debug_log("Using cached embedding")
-        return st.session_state.embeddings_cache[text_hash]
-    
-    # If not in cache, generate new embedding
-    debug_log(f"Generating new embedding for text of length: {len(text)}")
-    embedding = get_embedding(text)
-    if embedding is not None:
-        st.session_state.embeddings_cache[text_hash] = embedding
-        debug_log("Successfully cached new embedding")
-    return embedding
-
 def get_vertex_ai_token():
     """Get authentication token for Vertex AI API"""
     try:
@@ -85,20 +62,25 @@ def get_vertex_ai_token():
         debug_log(f"Token error details: {str(e)}")
         return None
 
-def get_embedding(text):
-    """Generate embedding using Vertex AI text-embedding-005 model via REST API"""
-    if not text or not isinstance(text, str):
-        st.error("Invalid input: text must be a non-empty string")
+def get_embedding(texts, batch_size=5):
+    """Generate embeddings using Vertex AI text-embedding-005 model via REST API"""
+    if isinstance(texts, str):
+        texts = [texts]  # Convert single text to list
+        
+    if not texts or not all(isinstance(text, str) for text in texts):
+        st.error("Invalid input: all texts must be non-empty strings")
         return None
         
-    text = text.strip()
-    if not text:
-        st.error("Invalid input: text cannot be empty or whitespace only")
+    # Clean and validate texts
+    texts = [text.strip() for text in texts if text.strip()]
+    if not texts:
+        st.error("Invalid input: no valid texts provided")
         return None
         
     try:
-        debug_log("Starting embedding generation...")
-        debug_log(f"Input text length: {len(text)} characters")
+        debug_log("Starting batch embedding generation...")
+        debug_log(f"Number of texts to process: {len(texts)}")
+        debug_log(f"Text lengths: {[len(text) for text in texts]}")
         
         # Get project and location from secrets
         project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
@@ -113,7 +95,7 @@ def get_embedding(text):
         if not token:
             return None
             
-        # Prepare the API request
+        # Prepare the API endpoint
         endpoint = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/publishers/google/models/textembedding-gecko:predict"
         
         headers = {
@@ -121,67 +103,124 @@ def get_embedding(text):
             "Content-Type": "application/json"
         }
         
-        data = {
-            "instances": [
-                {"content": text}
-            ]
-        }
-        
-        debug_log(f"Making request to: {endpoint}")
-        
-        # Make the API request with retry logic for quota limits
-        max_retries = 3
-        retry_delay = 2  # seconds
-        
-        for attempt in range(max_retries):
-            try:
-                response = requests.post(endpoint, headers=headers, json=data)
-                
-                if response.status_code == 429:  # Quota exceeded
-                    if attempt < max_retries - 1:
-                        debug_log(f"Quota exceeded, retrying in {retry_delay} seconds...")
-                        time.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
-                        continue
-                    else:
-                        st.error("""
-                        Quota exceeded for Vertex AI. Please try again later or request a quota increase.
-                        You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
-                        """)
+        # Process texts in batches
+        all_embeddings = []
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i + batch_size]
+            debug_log(f"\nProcessing batch {i//batch_size + 1} of {(len(texts) + batch_size - 1)//batch_size}")
+            debug_log(f"Batch size: {len(batch_texts)}")
+            
+            data = {
+                "instances": [{"content": text} for text in batch_texts]
+            }
+            
+            # Make the API request with retry logic for quota limits
+            max_retries = 3
+            retry_delay = 2
+            
+            for attempt in range(max_retries):
+                try:
+                    response = requests.post(endpoint, headers=headers, json=data)
+                    
+                    if response.status_code == 429:  # Quota exceeded
+                        if attempt < max_retries - 1:
+                            debug_log(f"Quota exceeded, retrying in {retry_delay} seconds...")
+                            time.sleep(retry_delay)
+                            retry_delay *= 2  # Exponential backoff
+                            continue
+                        else:
+                            st.error("""
+                            Quota exceeded for Vertex AI. Please try again later or request a quota increase.
+                            You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
+                            """)
+                            return None
+                    
+                    if response.status_code != 200:
+                        st.error(f"Error from Vertex AI API: {response.status_code}")
+                        debug_log(f"API Response: {response.text}")
                         return None
-                
-                if response.status_code != 200:
-                    st.error(f"Error from Vertex AI API: {response.status_code}")
-                    debug_log(f"API Response: {response.text}")
-                    return None
+                        
+                    # Parse the response
+                    result = response.json()
+                    debug_log("Successfully received API response")
                     
-                # Parse the response
-                result = response.json()
-                debug_log("Successfully received API response")
-                
-                if 'predictions' not in result or not result['predictions']:
-                    st.error("No predictions in API response")
-                    debug_log(f"API Response: {result}")
-                    return None
+                    if 'predictions' not in result or not result['predictions']:
+                        st.error("No predictions in API response")
+                        debug_log(f"API Response: {result}")
+                        return None
+                        
+                    # Extract the embeddings
+                    batch_embeddings = [np.array(pred['embeddings']['values']) for pred in result['predictions']]
+                    all_embeddings.extend(batch_embeddings)
+                    debug_log(f"Successfully extracted {len(batch_embeddings)} embeddings")
                     
-                # Extract the embedding
-                embedding = np.array(result['predictions'][0]['embeddings']['values'])
-                debug_log(f"Successfully extracted embedding, shape: {embedding.shape}")
-                
-                return embedding
-                
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    debug_log(f"Request failed, retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
-                else:
-                    raise e
+                    # Add a small delay between batches to avoid rate limits
+                    if i + batch_size < len(texts):
+                        time.sleep(1)
+                    
+                    break  # Success, exit retry loop
+                    
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        debug_log(f"Request failed, retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                    else:
+                        raise e
+        
+        if len(all_embeddings) != len(texts):
+            st.error(f"Expected {len(texts)} embeddings but got {len(all_embeddings)}")
+            return None
+            
+        debug_log(f"Successfully generated all {len(all_embeddings)} embeddings")
+        return all_embeddings[0] if len(texts) == 1 else all_embeddings
         
     except Exception as e:
         st.error(f"Error in get_embedding: {str(e)}")
         debug_log(f"Full error details: {str(e)}")
         return None
+
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def get_cached_embedding(texts, batch_size=5):
+    """Get embeddings from cache or generate new ones"""
+    if isinstance(texts, str):
+        texts = [texts]  # Convert single text to list
+    
+    # Create hashes for caching
+    text_hashes = [hashlib.md5(text.encode()).hexdigest() for text in texts]
+    
+    # Check if we have cached embeddings
+    if 'embeddings_cache' not in st.session_state:
+        st.session_state.embeddings_cache = {}
+    
+    # Check which texts need new embeddings
+    texts_to_generate = []
+    indices_to_generate = []
+    cached_embeddings = []
+    
+    for i, (text, text_hash) in enumerate(zip(texts, text_hashes)):
+        if text_hash in st.session_state.embeddings_cache:
+            debug_log(f"Using cached embedding for text {i+1}")
+            cached_embeddings.append(st.session_state.embeddings_cache[text_hash])
+        else:
+            texts_to_generate.append(text)
+            indices_to_generate.append(i)
+    
+    if texts_to_generate:
+        debug_log(f"Generating new embeddings for {len(texts_to_generate)} texts")
+        new_embeddings = get_embedding(texts_to_generate, batch_size)
+        
+        if new_embeddings is not None:
+            # Cache the new embeddings
+            for i, embedding in zip(indices_to_generate, new_embeddings):
+                st.session_state.embeddings_cache[text_hashes[i]] = embedding
+                cached_embeddings.append(embedding)
+            debug_log("Successfully cached new embeddings")
+    
+    if not cached_embeddings:
+        return None
+        
+    return cached_embeddings[0] if len(texts) == 1 else cached_embeddings
 
 def extract_sections(html_content):
     """Extract content sections from HTML, properly handling nested tags"""
@@ -619,13 +658,13 @@ with tab2:
         if sections:
             st.write(f"Found {len(sections)} sections in the webpage")
             
-            # Generate embeddings for all sections
+            # Generate embeddings for all sections in batches
             with st.spinner("Generating embeddings for sections..."):
-                section_embeddings = []
-                for section in sections:
-                    embedding = get_cached_embedding(section['text'])
-                    if embedding is not None:
-                        section_embeddings.append(embedding)
+                section_texts = [section['text'] for section in sections]
+                embeddings = get_cached_embedding(section_texts, batch_size=5)
+                
+                if embeddings is not None:
+                    section_embeddings = embeddings if isinstance(embeddings, list) else [embeddings]
             
             if section_embeddings:
                 # If we have a keyword embedding from tab1, calculate similarity
@@ -711,17 +750,16 @@ with tab3:
                                 st.warning(f"Could not scrape content from {url}")
                                 continue
                                 
-                            # Generate embeddings for all sections
-                            section_embeddings_url = []
-                            for section in sections:
-                                embedding = get_cached_embedding(section['text'])
-                                if embedding is not None:
-                                    section_embeddings_url.append(embedding)
+                            # Generate embeddings for all sections in batches
+                            section_texts = [section['text'] for section in sections]
+                            embeddings = get_cached_embedding(section_texts, batch_size=5)
                             
-                            if not section_embeddings_url:
+                            if embeddings is not None:
+                                section_embeddings_url = embeddings if isinstance(embeddings, list) else [embeddings]
+                            else:
                                 st.warning(f"Could not generate embeddings for {url}")
                                 continue
-                                
+                            
                             try:
                                 # Average section embeddings
                                 avg_section_embedding = np.mean(section_embeddings_url, axis=0)
