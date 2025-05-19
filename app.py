@@ -191,10 +191,11 @@ with tab2:
 with tab3:
     st.subheader("Analyze Multiple URLs")
     st.markdown("""
-    Enter a list of URLs (one per line) to analyze their relevance to your keyword and to each other.
+    Enter URLs (one per line) to analyze their relevance to your keyword and to each other.
+    You can also compare a single URL to the page you analyzed in the "Webpage Analysis" tab.
     The app will show:
     - Query relevance: How similar each URL is to your keyword
-    - URL similarity: How similar the URLs are to each other
+    - URL similarity: How similar the URLs are to each other and to the analyzed page
     - Most relevant URLs ranked by similarity
     - Individual URL scores
     """)
@@ -248,8 +249,27 @@ with tab3:
             if url_results:
                 # Calculate URL-to-URL similarities
                 url_similarities = []
+                
+                # If we have a current page from tab 2, add it to comparisons
+                current_page_url = None
+                if 'url_input' in locals() and url_input and 'section_embeddings' in locals() and section_embeddings:
+                    current_page_url = "Current Page"
+                    current_page_embedding = np.mean(section_embeddings, axis=0)
+                    url_embeddings[current_page_url] = current_page_embedding
+                
+                # Compare URLs with each other and with current page
                 for i, url1 in enumerate(urls):
-                    for url2 in urls[i+1:]:  # Only compare each pair once
+                    # Compare with current page if available
+                    if current_page_url:
+                        similarity = calculate_similarity(url_embeddings[url1], url_embeddings[current_page_url])
+                        url_similarities.append({
+                            'url1': url1,
+                            'url2': current_page_url,
+                            'similarity': similarity
+                        })
+                    
+                    # Compare with other URLs
+                    for url2 in urls[i+1:]:
                         if url1 in url_embeddings and url2 in url_embeddings:
                             similarity = calculate_similarity(url_embeddings[url1], url_embeddings[url2])
                             url_similarities.append({
@@ -336,6 +356,18 @@ with tab3:
                             **   {pair['url2']}**  
                             Similarity: {pair['similarity']:.3f}
                             """)
+                        
+                        # If we have current page comparisons, show them separately
+                        if current_page_url:
+                            st.subheader("Similarity to Current Page")
+                            current_page_similarities = [s for s in url_similarities if s['url2'] == current_page_url]
+                            current_page_similarities.sort(key=lambda x: x['similarity'], reverse=True)
+                            
+                            for similarity in current_page_similarities:
+                                st.markdown(f"""
+                                **URL: {similarity['url1']}**  
+                                Similarity to Current Page: {similarity['similarity']:.3f}
+                                """)
                         
                         # Display all URL pairs in a table
                         st.subheader("All URL Pair Similarities")
