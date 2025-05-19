@@ -1,6 +1,4 @@
 import streamlit as st
-import tensorflow_hub as hub
-import tensorflow_text
 import numpy as np
 import requests
 from bs4 import BeautifulSoup
@@ -8,33 +6,72 @@ from sklearn.metrics.pairwise import cosine_similarity
 import urllib.parse
 import json
 import pandas as pd
+from google.cloud import aiplatform
+from google.oauth2 import service_account
+import google.auth
 
 # Set page config
 st.set_page_config(
-    page_title="Universal Sentence Encoder Embedding Generator",
+    page_title="Google Vertex AI Embedding Generator",
     page_icon="🔤",
     layout="centered"
 )
 
 # Add title and description
-st.title("Universal Sentence Encoder Embedding Generator")
+st.title("Google Vertex AI Embedding Generator")
 st.markdown("""
-This app generates vector embeddings for text and webpages using Google's Universal Sentence Encoder.
+This app generates vector embeddings for text and webpages using Google's Vertex AI text-embedding-005 model.
 You can either enter a keyword or a webpage URL to analyze content similarity.
 """)
 
-# Load the Universal Sentence Encoder model
+# Initialize Vertex AI
 @st.cache_resource
-def load_model():
-    return hub.load("https://tfhub.dev/google/universal-sentence-encoder-multilingual/3")
+def init_vertex_ai():
+    try:
+        # Try to get credentials from Streamlit secrets
+        if 'GOOGLE_APPLICATION_CREDENTIALS_JSON' in st.secrets:
+            # Create credentials from JSON string
+            credentials_info = json.loads(st.secrets['GOOGLE_APPLICATION_CREDENTIALS_JSON'])
+            credentials = service_account.Credentials.from_service_account_info(credentials_info)
+        else:
+            # Try to use default credentials
+            credentials, project = google.auth.default()
+        
+        # Initialize Vertex AI
+        aiplatform.init(
+            credentials=credentials,
+            project=st.secrets.get('GOOGLE_CLOUD_PROJECT', None),
+            location=st.secrets.get('GOOGLE_CLOUD_LOCATION', 'us-central1')
+        )
+        return True
+    except Exception as e:
+        st.error(f"Error initializing Vertex AI: {str(e)}")
+        st.info("""
+        Please make sure you have set up the following in your Streamlit secrets:
+        1. GOOGLE_APPLICATION_CREDENTIALS_JSON: Your service account key JSON
+        2. GOOGLE_CLOUD_PROJECT: Your Google Cloud project ID
+        3. GOOGLE_CLOUD_LOCATION: Your preferred location (default: us-central1)
+        """)
+        return False
 
-# Load the model
-with st.spinner("Loading the Universal Sentence Encoder model..."):
-    model = load_model()
+# Initialize Vertex AI
+if not init_vertex_ai():
+    st.stop()
 
 def get_embedding(text):
-    """Generate embedding for a single text input"""
-    return model([text])[0].numpy()
+    """Generate embedding using Vertex AI text-embedding-005 model"""
+    try:
+        # Initialize the model
+        model = aiplatform.TextEmbeddingModel.from_pretrained("textembedding-gecko@latest")
+        
+        # Get embeddings
+        embeddings = model.get_embeddings([text])
+        
+        # Return the first (and only) embedding
+        return np.array(embeddings[0].values)
+    except Exception as e:
+        st.error(f"Error generating embedding: {str(e)}")
+        return None
 
 def scrape_webpage(url):
     """Scrape webpage content using ScrapingBee API"""
@@ -312,4 +349,4 @@ with tab3:
 
 # Add footer
 st.markdown("---")
-st.markdown("Built with Streamlit and Google's Universal Sentence Encoder") 
+st.markdown("Built with Streamlit and Google's Vertex AI text-embedding-005 model") 
