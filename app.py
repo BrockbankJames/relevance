@@ -892,8 +892,29 @@ def scrape_webpage(url):
                             
                             # First, find all H1 elements to ensure we don't miss any
                             debug_log("\n=== STARTING H1 PROCESSING ===")
-                            all_h1s = soup.find_all('h1')  # Find ALL H1s regardless of class
-                            debug_log(f"\nFound {len(all_h1s)} total H1 elements")
+                            # Try different ways to find H1s to ensure we catch all of them
+                            all_h1s = []
+                            
+                            # Method 1: Find all H1s directly
+                            direct_h1s = soup.find_all('h1')
+                            debug_log(f"\nFound {len(direct_h1s)} H1s via direct search")
+                            all_h1s.extend(direct_h1s)
+                            
+                            # Method 2: Find H1s with specific classes
+                            class_h1s = soup.find_all('h1', class_=['a-heading', 'a-heading-display', 'a-heading-display--md'])
+                            debug_log(f"\nFound {len(class_h1s)} H1s via class search")
+                            for h1 in class_h1s:
+                                if h1 not in all_h1s:
+                                    all_h1s.append(h1)
+                            
+                            # Method 3: Find H1s by CSS selector
+                            css_h1s = soup.select('h1.a-heading.a-heading-display.a-heading-display--md')
+                            debug_log(f"\nFound {len(css_h1s)} H1s via CSS selector")
+                            for h1 in css_h1s:
+                                if h1 not in all_h1s:
+                                    all_h1s.append(h1)
+                            
+                            debug_log(f"\nTotal unique H1 elements found: {len(all_h1s)}")
                             
                             # Log details of each H1 found
                             for i, h1 in enumerate(all_h1s, 1):
@@ -928,6 +949,7 @@ def scrape_webpage(url):
                                 sections.append(h1_section)
                                 processed_h1s.add(h1)
                                 debug_log(f"Created H1-only section: {h1_text}")
+                                debug_log(f"H1 section details: {h1_section}")
                                 
                                 # Create separate content section for text between H1 and H2
                                 content_section = {
@@ -978,10 +1000,11 @@ def scrape_webpage(url):
                                 debug_log(f"\nSection {i}:")
                                 debug_log(f"Type: {section['type']}")
                                 debug_log(f"Heading: {section['heading']}")
-                                debug_log(f"Text: {section['text']}")  # Added explicit text logging
+                                debug_log(f"Text: {section['text']}")
                                 debug_log(f"Content items: {len(section['content'])}")
                                 if section['content']:
                                     debug_log(f"Content preview: {section['content'][0][:200]}")
+                                debug_log(f"Full section: {section}")  # Added full section logging
                             
                             # Second pass: Process remaining elements (H2 and below)
                             for element in soup.find_all(['div', 'section', 'article', 'p', 'h2', 'h3', 'h4', 'h5', 'h6']):
