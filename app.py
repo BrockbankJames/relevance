@@ -882,11 +882,9 @@ def scrape_webpage(url):
                             # First, find all headings to establish hierarchy
                             headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
                             debug_log(f"Found {len(headings)} total headings")
-                            for h in headings:
-                                debug_log(f"Found {h.name} with text: {h.get_text().strip()[:100]}")
                             
-                            # Process elements in document order
-                            for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'article', 'section', 'div']):
+                            # Process elements in document order, handling containers with H1s specially
+                            for element in soup.find_all(['div', 'section', 'article', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
                                 if element and element.parent:  # Check if element exists and has a parent
                                     # Skip elements that are part of navigation
                                     if element.get('class'):
@@ -910,16 +908,41 @@ def scrape_webpage(url):
                                                         'cookie consent', 'cookie notice', 'cookie policy',
                                                         'login', 'log in', 'login form', 'login modal',
                                                         'preference', 'preferences', 'preference panel',
-                                                        'onetrust']  # Added onetrust to aria labels
+                                                        'onetrust']
                                         ) or any(
                                             term in element.get('id', '').lower()
-                                            for term in excluded_terms + ['main-nav', 'primary-nav']  # Include all terms from excluded_terms
+                                            for term in excluded_terms + ['main-nav', 'primary-nav']
                                         ):
                                             continue
                                     
+                                    # Special handling for containers that might have H1s
+                                    if element.name in ['div', 'section', 'article']:
+                                        h1_in_container = element.find('h1')
+                                        if h1_in_container:
+                                            debug_log(f"\nFound container with H1: {element.get('class', [])}")
+                                            # Get all text content from this container
+                                            container_text = []
+                                            for child in element.descendants:
+                                                if child.name and child.name not in ['script', 'style', 'meta', 'link']:
+                                                    text = child.get_text().strip()
+                                                    if text and len(text.split()) > 2:
+                                                        container_text.append(text)
+                                            
+                                            if container_text:
+                                                debug_log(f"Container text content: {container_text[0][:100]}")
+                                                content_elements.append({
+                                                    'type': 'h1-container',
+                                                    'text': ' '.join(container_text),
+                                                    'heading': container_text[0],  # Use first text as heading
+                                                    'content': container_text[1:],  # Rest as content
+                                                    'level': 1,
+                                                    'is_container': True
+                                                })
+                                            continue
+                                    
+                                    # Regular element processing
                                     text = element.get_text().strip()
                                     if text and len(text.split()) > 2:  # Skip very short text
-                                        # For headings, log the hierarchy level
                                         if element.name.startswith('h'):
                                             debug_log(f"\nProcessing {element.name} heading: {text[:100]}")
                                             debug_log(f"Heading level: {int(element.name[1])}")
@@ -939,12 +962,12 @@ def scrape_webpage(url):
                                 current_level = 0
                                 found_first_h1 = False
                                 
-                                # First, find the index of the first H1
+                                # First, find the index of the first H1 or H1 container
                                 first_h1_index = None
                                 for i, elem in enumerate(content_elements):
-                                    if elem['type'] == 'h1':
+                                    if elem['type'] in ['h1', 'h1-container']:
                                         first_h1_index = i
-                                        debug_log(f"\nFound first H1 at index {i}: {elem['text'][:100]}")
+                                        debug_log(f"\nFound first H1 at index {i}: {elem['heading'][:100]}")
                                         break
                                 
                                 # Process elements in order
