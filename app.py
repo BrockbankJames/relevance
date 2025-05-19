@@ -6,9 +6,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 import urllib.parse
 import json
 import pandas as pd
-from google.cloud import aiplatform
-from google.oauth2 import service_account
-import google.auth
+import vertexai
+from vertexai.language_models import TextEmbeddingModel
 
 # Set page config
 st.set_page_config(
@@ -49,52 +48,15 @@ def init_vertex_ai():
     try:
         debug_log("Starting Vertex AI initialization...")
         
-        # Get project and location first
+        # Get project and location from secrets
         project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
         location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'europe-west1')
-        debug_log(f"Initial location from secrets: {location}")
-        
-        # Validate location
-        if location not in SUPPORTED_REGIONS:
-            st.error(f"Unsupported region in secrets: {location}. Using default: europe-west1")
-            location = 'europe-west1'
-        
-        debug_log(f"Using location: {location}")
-        
-        # Try to get credentials from Streamlit secrets
-        if 'GOOGLE_APPLICATION_CREDENTIALS_JSON' in st.secrets:
-            debug_log("Found credentials in Streamlit secrets")
-            try:
-                # Create credentials from JSON string
-                credentials_info = json.loads(st.secrets['GOOGLE_APPLICATION_CREDENTIALS_JSON'])
-                debug_log("Successfully parsed credentials JSON")
-                credentials = service_account.Credentials.from_service_account_info(credentials_info)
-                debug_log("Successfully created credentials object")
-            except json.JSONDecodeError as e:
-                st.error(f"Error parsing credentials JSON: {str(e)}")
-                return False
-            except Exception as e:
-                st.error(f"Error creating credentials: {str(e)}")
-                return False
-        else:
-            debug_log("No credentials found in Streamlit secrets, trying default credentials")
-            try:
-                credentials, project = google.auth.default()
-                debug_log("Successfully got default credentials")
-            except Exception as e:
-                st.error(f"Error getting default credentials: {str(e)}")
-                return False
-        
-        debug_log(f"Final configuration - Project: {project_id}, Location: {location}")
+        debug_log(f"Using project: {project_id}, location: {location}")
         
         # Initialize Vertex AI
         debug_log("Initializing Vertex AI...")
         try:
-            aiplatform.init(
-                credentials=credentials,
-                project=project_id,
-                location=location
-            )
+            vertexai.init(project=project_id, location=location)
             debug_log("Vertex AI initialization complete!")
             return True
         except Exception as e:
@@ -115,17 +77,14 @@ def init_vertex_ai():
         - GOOGLE_APPLICATION_CREDENTIALS_JSON: {'present': 'GOOGLE_APPLICATION_CREDENTIALS_JSON' in st.secrets}
         - GOOGLE_CLOUD_PROJECT: {'present': 'GOOGLE_CLOUD_PROJECT' in st.secrets}
         - GOOGLE_CLOUD_LOCATION: {'present': 'GOOGLE_CLOUD_LOCATION' in st.secrets}
-        - Current location value: {location}
         """)
         return False
 
-# Initialize Vertex AI with spinner
+# Initialize Vertex AI
 with st.spinner("Initializing Vertex AI..."):
-    debug_log("Starting app initialization...")
     if not init_vertex_ai():
         st.error("Failed to initialize Vertex AI. Please check the error messages above.")
         st.stop()
-    debug_log("App initialization complete!")
 
 def get_embedding(text):
     """Generate embedding using Vertex AI text-embedding-005 model"""
@@ -133,30 +92,10 @@ def get_embedding(text):
         debug_log("Starting embedding generation...")
         debug_log(f"Input text length: {len(text)} characters")
         
-        # Get project and location from secrets
-        project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
-        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'europe-west1')
-        debug_log(f"Location from secrets in get_embedding: {location}")
-        
-        if not project_id:
-            st.error("GOOGLE_CLOUD_PROJECT not found in secrets")
-            return None
-            
-        # Validate location
-        if location not in SUPPORTED_REGIONS:
-            debug_log(f"Invalid location {location}, using default: europe-west1")
-            location = 'europe-west1'
-            
-        debug_log(f"Using location in get_embedding: {location}")
-            
         # Initialize the model
         debug_log("Initializing model...")
-        # Use the correct model endpoint with project ID from secrets
-        model_endpoint = f"projects/{project_id}/locations/{location}/publishers/google/models/textembedding-gecko@001"
-        debug_log(f"Using model endpoint: {model_endpoint}")
-        
         try:
-            model = aiplatform.Model(model_endpoint)
+            model = TextEmbeddingModel.from_pretrained("text-embedding-005")
             debug_log("Model initialized successfully")
         except Exception as e:
             st.error(f"Error initializing model: {str(e)}")
@@ -166,21 +105,16 @@ def get_embedding(text):
         # Get embeddings
         debug_log("Getting embeddings...")
         try:
-            response = model.predict([text])
+            embeddings = model.get_embeddings([text])
             debug_log("Embeddings generated successfully")
-        except Exception as e:
-            st.error(f"Error getting embeddings: {str(e)}")
-            debug_log(f"Embedding generation error details: {str(e)}")
-            return None
-        
-        # Extract the embedding from the response
-        try:
-            embedding = np.array(response.predictions[0])
+            
+            # Extract the embedding from the response
+            embedding = np.array(embeddings[0].values)
             debug_log(f"Embedding shape: {embedding.shape}")
             return embedding
         except Exception as e:
-            st.error(f"Error processing embedding response: {str(e)}")
-            debug_log(f"Response processing error details: {str(e)}")
+            st.error(f"Error getting embeddings: {str(e)}")
+            debug_log(f"Embedding generation error details: {str(e)}")
             return None
             
     except Exception as e:
