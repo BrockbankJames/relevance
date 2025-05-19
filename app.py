@@ -787,19 +787,6 @@ def scrape_webpage(url):
             try:
                 data = json.loads(response.text)
                 debug_log(f"JSON keys found: {list(data.keys())}")
-                
-                # Check if we got article previews instead of main content
-                if 'main_content' in data and data['main_content']:
-                    preview_count = sum(1 for content in data['main_content'] 
-                                     if 'goco-c-newsfeed__list-item' in content)
-                    if preview_count > 0:
-                        debug_log(f"Found {preview_count} article previews")
-                        st.warning("""
-                        The page appears to be a list of article previews rather than a full article.
-                        Please try using the direct URL to a specific article instead.
-                        """)
-                        return None
-                
                 sections = extract_sections_from_json(response.text)
             except json.JSONDecodeError as e:
                 debug_log(f"Error decoding JSON: {str(e)}")
@@ -816,7 +803,6 @@ def scrape_webpage(url):
             1. The page is blocking access
             2. The page has no text content
             3. The page structure is different than expected
-            4. The page is a list of article previews
             
             Try using a different URL or check if the page is accessible.
             """)
