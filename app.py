@@ -533,10 +533,19 @@ def extract_sections_from_json(json_data):
                     # Create a single soup object from all content
                     soup = BeautifulSoup(combined_html, 'html.parser')
                     
-                    # Simply remove header, nav, and footer elements
+                    # Remove header, nav, and footer elements
                     for tag in ['header', 'nav', 'footer']:
                         for element in soup.find_all(tag):
                             debug_log(f"\nRemoving {tag} element:")
+                            debug_log(f"Content: {element.get_text().strip()[:200]}")
+                            element.decompose()
+                    
+                    # Remove elements with nav/navigation in class names (as substrings)
+                    for element in soup.find_all(class_=True):
+                        classes = ' '.join(element.get('class', [])).lower()
+                        if any(nav_term in class_name for class_name in element.get('class', []) for nav_term in ['nav', 'navigation']):
+                            debug_log(f"\nRemoving element with nav class:")
+                            debug_log(f"Classes: {element.get('class', [])}")
                             debug_log(f"Content: {element.get_text().strip()[:200]}")
                             element.decompose()
                     
@@ -558,6 +567,13 @@ def extract_sections_from_json(json_data):
                     for heading in headings:
                         if not heading or not heading.name:  # Skip None or invalid headings
                             continue
+                        
+                        # Skip headings that are part of navigation
+                        if heading.get('class'):
+                            if any(nav_term in class_name for class_name in heading.get('class', []) for nav_term in ['nav', 'navigation']):
+                                debug_log(f"\nSkipping navigation heading: {heading.get_text().strip()}")
+                                debug_log(f"Classes: {heading.get('class', [])}")
+                                continue
                         
                         # Get heading text
                         heading_text = heading.get_text().strip()
@@ -595,6 +611,14 @@ def extract_sections_from_json(json_data):
                                              current.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] and 
                                              int(current.name[1]) <= int(heading.name[1])):
                             if hasattr(current, 'name'):
+                                # Skip elements that are part of navigation
+                                if current.get('class'):
+                                    if any(nav_term in class_name for class_name in current.get('class', []) for nav_term in ['nav', 'navigation']):
+                                        debug_log(f"\nSkipping navigation content: {current.get_text().strip()[:100]}")
+                                        debug_log(f"Classes: {current.get('class', [])}")
+                                        current = current.next_sibling
+                                        continue
+                                
                                 # Get text from any element
                                 text = current.get_text().strip()
                                 if text and len(text.split()) > 2:  # Skip very short text
@@ -630,6 +654,11 @@ def extract_sections_from_json(json_data):
                     content_elements = []
                     for element in body.descendants:
                         if element and element.name and element.name not in ['script', 'style', 'meta', 'link']:
+                            # Skip elements that are part of navigation
+                            if element.get('class'):
+                                if any(nav_term in class_name for class_name in element.get('class', []) for nav_term in ['nav', 'navigation']):
+                                    continue
+                            
                             text = element.get_text().strip()
                             if text and len(text.split()) > 2:  # Skip very short text
                                 content_elements.append(text)
