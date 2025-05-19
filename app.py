@@ -683,7 +683,7 @@ def scrape_webpage(url):
             'block_resources': 'false',  # Don't block resources to avoid 500 errors
             'extract_rules': json.dumps({
                 'main_content': {
-                    'selector': 'body > *:not(header):not(footer):not(nav)',
+                    'selector': 'body',
                     'type': 'list',
                     'output': 'html'
                 }
@@ -732,22 +732,53 @@ def scrape_webpage(url):
                         debug_log(f"Content length: {len(content_html)} characters")
                         
                         try:
-                            # Create soup object and verify no header/footer/nav elements
+                            # Create soup object and log initial structure
                             soup = BeautifulSoup(content_html, 'html.parser')
                             
-                            # Double-check for any remaining header/footer/nav elements
-                            unwanted_elements = soup.find_all(['header', 'footer', 'nav'])
-                            if unwanted_elements:
-                                debug_log(f"Found {len(unwanted_elements)} unwanted elements, removing them...")
-                                for tag in unwanted_elements:
-                                    debug_log(f"Removing {tag.name} element and its contents")
-                                    tag.decompose()
+                            # Log all header, footer, and nav elements found
+                            debug_log("\nSearching for unwanted elements...")
+                            header_elements = soup.find_all('header')
+                            footer_elements = soup.find_all('footer')
+                            nav_elements = soup.find_all('nav')
+                            
+                            debug_log(f"Found {len(header_elements)} header elements")
+                            debug_log(f"Found {len(footer_elements)} footer elements")
+                            debug_log(f"Found {len(nav_elements)} nav elements")
+                            
+                            # Log details of each unwanted element
+                            for tag_list, tag_name in [(header_elements, 'header'), 
+                                                      (footer_elements, 'footer'), 
+                                                      (nav_elements, 'nav')]:
+                                for j, tag in enumerate(tag_list):
+                                    debug_log(f"\n{tag_name.capitalize()} element {j+1}:")
+                                    debug_log(f"HTML: {tag.prettify()[:500]}")
+                                    debug_log(f"Text content: {tag.get_text().strip()[:200]}")
+                                    debug_log(f"Parent: {tag.parent.name if tag.parent else 'None'}")
+                                    debug_log(f"Classes: {tag.get('class', [])}")
+                                    debug_log(f"ID: {tag.get('id', 'None')}")
+                            
+                            # Remove all unwanted elements
+                            for tag in header_elements + footer_elements + nav_elements:
+                                debug_log(f"\nRemoving {tag.name} element:")
+                                debug_log(f"Content: {tag.get_text().strip()[:200]}")
+                                tag.decompose()
+                            
+                            # Verify removal
+                            remaining_unwanted = soup.find_all(['header', 'footer', 'nav'])
+                            if remaining_unwanted:
+                                debug_log(f"\nWARNING: Found {len(remaining_unwanted)} remaining unwanted elements!")
+                                for j, tag in enumerate(remaining_unwanted):
+                                    debug_log(f"Remaining {tag.name} {j+1}: {tag.prettify()[:200]}")
+                            else:
+                                debug_log("\nAll unwanted elements successfully removed")
                             
                             # Get the cleaned HTML
                             cleaned_html = str(soup)
                             if cleaned_html.strip():
                                 processed_content.append(cleaned_html)
-                                debug_log(f"Added processed content block {i+1}, length: {len(cleaned_html)}")
+                                debug_log(f"\nAdded processed content block {i+1}, length: {len(cleaned_html)}")
+                                debug_log("First 500 characters of cleaned content:")
+                                debug_log(cleaned_html[:500])
                             
                         except Exception as e:
                             debug_log(f"Error processing content block {i+1}: {str(e)}")
