@@ -882,10 +882,16 @@ def scrape_webpage(url):
                                     if element.get('class'):
                                         classes = element.get('class', [])
                                         if any(
-                                            class_name.lower() in ['nav', 'navigation', 'navbar', 'navbar-nav', 'nav-menu', 'nav-wrapper', 'nav-container', 'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal']
+                                            class_name.lower() in ['nav', 'navigation', 'navbar', 'navbar-nav', 'nav-menu', 'nav-wrapper', 'nav-container', 
+                                                                 'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal',
+                                                                 'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice']
                                             or element.get('role') == 'navigation'
-                                            or element.get('aria-label', '').lower() in ['navigation', 'main navigation', 'primary navigation', 'cookie consent', 'cookie notice', 'cookie policy']
-                                            or element.get('id', '').lower() in ['nav', 'navigation', 'navbar', 'main-nav', 'primary-nav', 'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal']
+                                            or element.get('aria-label', '').lower() in ['navigation', 'main navigation', 'primary navigation', 
+                                                                                       'cookie consent', 'cookie notice', 'cookie policy',
+                                                                                       'login', 'log in', 'login form', 'login modal', 'login popup', 'login panel', 'login dialog']
+                                            or element.get('id', '').lower() in ['nav', 'navigation', 'navbar', 'main-nav', 'primary-nav', 
+                                                                               'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal',
+                                                                               'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice']
                                             for class_name in classes
                                         ):
                                             continue
@@ -973,10 +979,16 @@ def scrape_webpage(url):
                         if element.get('class'):
                             classes = element.get('class', [])
                             if any(
-                                class_name.lower() in ['nav', 'navigation', 'navbar', 'navbar-nav', 'nav-menu', 'nav-wrapper', 'nav-container', 'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal']
+                                class_name.lower() in ['nav', 'navigation', 'navbar', 'navbar-nav', 'nav-menu', 'nav-wrapper', 'nav-container', 
+                                                                 'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal',
+                                                                 'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice']
                                 or element.get('role') == 'navigation'
-                                or element.get('aria-label', '').lower() in ['navigation', 'main navigation', 'primary navigation', 'cookie consent', 'cookie notice', 'cookie policy']
-                                or element.get('id', '').lower() in ['nav', 'navigation', 'navbar', 'main-nav', 'primary-nav', 'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal']
+                                or element.get('aria-label', '').lower() in ['navigation', 'main navigation', 'primary navigation', 
+                                                                           'cookie consent', 'cookie notice', 'cookie policy',
+                                                                           'login', 'log in', 'login form', 'login modal', 'login popup', 'login panel', 'login dialog']
+                                or element.get('id', '').lower() in ['nav', 'navigation', 'navbar', 'main-nav', 'primary-nav', 
+                                                                       'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal',
+                                                                       'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice']
                                 for class_name in classes
                             ):
                                 continue
