@@ -78,8 +78,12 @@ def get_embedding(texts, batch_size=250):
         return None
         
     try:
-        debug_log("Starting batch embedding generation...")
+        debug_log("\nStarting batch embedding generation...")
         debug_log(f"Number of texts to process: {len(texts)}")
+        for i, text in enumerate(texts[:3]):  # Show first 3 texts
+            debug_log(f"\nText {i+1} preview:")
+            debug_log(f"Length: {len(text)} characters")
+            debug_log(f"First 200 chars: {text[:200]}...")
         
         # Get project and location from secrets
         project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
@@ -1115,18 +1119,37 @@ def scrape_webpage(url):
 def calculate_similarity(embedding1, embedding2):
     """Calculate cosine similarity between two embeddings with additional validation"""
     try:
+        # Debug logging for input embeddings
+        debug_log(f"\nCalculating similarity between embeddings:")
+        debug_log(f"Embedding 1 type: {type(embedding1)}, shape: {embedding1.shape if hasattr(embedding1, 'shape') else 'no shape'}")
+        debug_log(f"Embedding 2 type: {type(embedding2)}, shape: {embedding2.shape if hasattr(embedding2, 'shape') else 'no shape'}")
+        
         # Ensure embeddings are numpy arrays
         if not isinstance(embedding1, np.ndarray):
             embedding1 = np.array(embedding1, dtype=np.float32)
         if not isinstance(embedding2, np.ndarray):
             embedding2 = np.array(embedding2, dtype=np.float32)
             
+        # Debug logging for numpy arrays
+        debug_log(f"After conversion - Embedding 1: mean={np.mean(embedding1):.4f}, std={np.std(embedding1):.4f}")
+        debug_log(f"After conversion - Embedding 2: mean={np.mean(embedding2):.4f}, std={np.std(embedding2):.4f}")
+        
         # Normalize embeddings
-        embedding1 = embedding1 / np.linalg.norm(embedding1)
-        embedding2 = embedding2 / np.linalg.norm(embedding2)
+        norm1 = np.linalg.norm(embedding1)
+        norm2 = np.linalg.norm(embedding2)
+        debug_log(f"Norms before normalization: {norm1:.4f}, {norm2:.4f}")
+        
+        embedding1 = embedding1 / norm1
+        embedding2 = embedding2 / norm2
+        
+        # Debug logging after normalization
+        debug_log(f"After normalization - Embedding 1: mean={np.mean(embedding1):.4f}, std={np.std(embedding1):.4f}")
+        debug_log(f"After normalization - Embedding 2: mean={np.mean(embedding2):.4f}, std={np.std(embedding2):.4f}")
+        debug_log(f"Norms after normalization: {np.linalg.norm(embedding1):.4f}, {np.linalg.norm(embedding2):.4f}")
         
         # Calculate cosine similarity
         similarity = np.dot(embedding1, embedding2)
+        debug_log(f"Raw similarity score: {similarity:.4f}")
         
         # Add validation to ensure similarity is in expected range
         if not -1.0 <= similarity <= 1.0:
@@ -1144,10 +1167,21 @@ def calculate_weighted_similarity(sections, keyword_embedding):
         return 0.0, [], {}
         
     try:
+        debug_log("\nCalculating weighted similarity:")
+        debug_log(f"Number of sections: {len(sections)}")
+        debug_log(f"Keyword embedding type: {type(keyword_embedding)}, shape: {keyword_embedding.shape if hasattr(keyword_embedding, 'shape') else 'no shape'}")
+        
         # Calculate raw similarities
         section_similarities = []
-        for section in sections:
+        for i, section in enumerate(sections):
+            debug_log(f"\nProcessing section {i+1}:")
+            debug_log(f"Section heading: {section.get('heading', 'No heading')}")
+            debug_log(f"Section text length: {len(section['text'].split())} words")
+            debug_log(f"Section text preview: {section['text'][:200]}...")
+            
             similarity = calculate_similarity(keyword_embedding, section['embedding'])
+            debug_log(f"Section similarity score: {similarity:.4f}")
+            
             section_similarities.append({
                 'section': section,
                 'similarity': similarity,
@@ -1157,11 +1191,18 @@ def calculate_weighted_similarity(sections, keyword_embedding):
         # Sort sections by similarity
         section_similarities.sort(key=lambda x: x['similarity'], reverse=True)
         
+        debug_log("\nSorted section similarities:")
+        for i, item in enumerate(section_similarities[:3]):  # Show top 3
+            debug_log(f"Top {i+1}: {item['section'].get('heading', 'No heading')}")
+            debug_log(f"  Similarity: {item['similarity']:.4f}")
+            debug_log(f"  Length: {item['text_length']} words")
+        
         # Calculate weights based on similarity and content length
         total_weight = 0
         weighted_sum = 0
         detailed_scores = []
         
+        debug_log("\nCalculating weights:")
         for i, item in enumerate(section_similarities):
             # Higher weight for more similar sections
             similarity_weight = 1.0 / (i + 1)  # 1.0, 0.5, 0.33, 0.25, etc.
@@ -1174,6 +1215,12 @@ def calculate_weighted_similarity(sections, keyword_embedding):
             total_weight += weight
             weighted_sum += item['similarity'] * weight
             
+            debug_log(f"\nSection {i+1} weights:")
+            debug_log(f"  Similarity weight: {similarity_weight:.4f}")
+            debug_log(f"  Length weight: {length_weight:.4f}")
+            debug_log(f"  Combined weight: {weight:.4f}")
+            debug_log(f"  Weighted contribution: {item['similarity'] * weight:.4f}")
+            
             detailed_scores.append({
                 'heading': item['section'].get('heading', 'No heading'),
                 'similarity': item['similarity'],
@@ -1184,16 +1231,26 @@ def calculate_weighted_similarity(sections, keyword_embedding):
         
         # Calculate weighted average
         weighted_avg = weighted_sum / total_weight if total_weight > 0 else 0.0
+        debug_log(f"\nFinal weighted average: {weighted_avg:.4f}")
         
         # Calculate additional metrics
+        raw_similarities = [s['similarity'] for s in section_similarities]
         metrics = {
-            'raw_avg': np.mean([s['similarity'] for s in section_similarities]),
-            'raw_max': max(s['similarity'] for s in section_similarities),
-            'raw_min': min(s['similarity'] for s in section_similarities),
-            'std_dev': np.std([s['similarity'] for s in section_similarities]),
+            'raw_avg': np.mean(raw_similarities),
+            'raw_max': max(raw_similarities),
+            'raw_min': min(raw_similarities),
+            'std_dev': np.std(raw_similarities),
             'section_count': len(sections),
             'weighted_avg': weighted_avg
         }
+        
+        debug_log("\nFinal metrics:")
+        debug_log(f"  Raw average: {metrics['raw_avg']:.4f}")
+        debug_log(f"  Raw max: {metrics['raw_max']:.4f}")
+        debug_log(f"  Raw min: {metrics['raw_min']:.4f}")
+        debug_log(f"  Std dev: {metrics['std_dev']:.4f}")
+        debug_log(f"  Section count: {metrics['section_count']}")
+        debug_log(f"  Weighted average: {metrics['weighted_avg']:.4f}")
         
         return weighted_avg, detailed_scores, metrics
         
