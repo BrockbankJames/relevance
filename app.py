@@ -661,38 +661,58 @@ def extract_sections_from_json(json_data):
                     continue
         
         # If we didn't get any headings from HTML, fall back to the headings list
+        # but filter out any that look like they're from header/footer
         if not headings and 'headings' in data and isinstance(data['headings'], list):
-            debug_log("No headings found in HTML, using headings list...")
+            debug_log("No headings found in HTML, using headings list with filtering...")
             for heading in data['headings']:
                 if heading and isinstance(heading, str):
                     # Skip headings that look like they're from header/footer
                     if any(non_content in heading.lower() for non_content in 
-                          ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use']):
-                        debug_log(f"Skipping non-content heading: {heading[:100]}")
+                          ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use',
+                           'home', 'about', 'contact', 'services', 'products', 'login', 'sign up', 'register',
+                           'search', 'cart', 'account', 'profile', 'settings', 'help', 'support', 'faq',
+                           'cookie', 'legal', 'social', 'useful information', 'other links']):
+                        debug_log(f"Skipping non-content heading from list: {heading[:100]}")
                         continue
+                        
+                    # Skip very short headings that are likely navigation items
+                    if len(heading.split()) <= 2:
+                        debug_log(f"Skipping short heading from list: {heading[:100]}")
+                        continue
+                        
                     headings.append({
                         'text': heading.strip(),
                         'level': 2,  # Default to h2
                         'html_tag': 'h2',
                         'position': len(headings)
                     })
-                    debug_log(f"Added heading from list (h2): {heading[:100]}")
+                    debug_log(f"Added filtered heading from list (h2): {heading[:100]}")
         
         # Process paragraphs from JSON if we didn't get enough from HTML
+        # but filter out any that look like they're from header/footer
         if len(paragraphs) < 3 and 'paragraphs' in data and isinstance(data['paragraphs'], list):
-            debug_log(f"Found {len(data['paragraphs'])} paragraphs in JSON")
+            debug_log(f"Found {len(data['paragraphs'])} paragraphs in JSON, filtering...")
             for paragraph in data['paragraphs']:
                 if paragraph and isinstance(paragraph, str):
                     # Skip paragraphs that look like they're from header/footer
                     if any(non_content in paragraph.lower() for non_content in 
-                          ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use']):
-                        debug_log(f"Skipping non-content paragraph: {paragraph[:100]}")
+                          ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use',
+                           'home', 'about', 'contact', 'services', 'products', 'login', 'sign up', 'register',
+                           'search', 'cart', 'account', 'profile', 'settings', 'help', 'support', 'faq',
+                           'cookie', 'legal', 'social', 'useful information', 'other links']):
+                        debug_log(f"Skipping non-content paragraph from list: {paragraph[:100]}")
                         continue
+                        
+                    # Skip very short paragraphs that are likely navigation items
+                    if len(paragraph.split()) <= 2:
+                        debug_log(f"Skipping short paragraph from list: {paragraph[:100]}")
+                        continue
+                        
                     paragraphs.append({
                         'text': paragraph.strip(),
                         'position': len(paragraphs)
                     })
-                    debug_log(f"Added paragraph: {paragraph[:100]}")
+                    debug_log(f"Added filtered paragraph from list: {paragraph[:100]}")
         
         # Sort all content by position
         all_content = sorted(headings + paragraphs, key=lambda x: x['position'])
@@ -715,8 +735,16 @@ def extract_sections_from_json(json_data):
                     
                 # Skip headings that look like they're from header/footer
                 if any(non_content in item['text'].lower() for non_content in 
-                      ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use']):
+                      ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use',
+                       'home', 'about', 'contact', 'services', 'products', 'login', 'sign up', 'register',
+                       'search', 'cart', 'account', 'profile', 'settings', 'help', 'support', 'faq',
+                       'cookie', 'legal', 'social', 'useful information', 'other links']):
                     debug_log(f"Skipping non-content heading: {item['text'][:100]}")
+                    continue
+                    
+                # Skip very short headings that are likely navigation items
+                if len(item['text'].split()) <= 2:
+                    debug_log(f"Skipping short heading: {item['text'][:100]}")
                     continue
                     
                 if item['html_tag'] == 'h1':
@@ -788,8 +816,16 @@ def extract_sections_from_json(json_data):
                         
                     # Skip H3s that look like they're from header/footer
                     if any(non_content in item['text'].lower() for non_content in 
-                          ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use']):
+                          ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use',
+                           'home', 'about', 'contact', 'services', 'products', 'login', 'sign up', 'register',
+                           'search', 'cart', 'account', 'profile', 'settings', 'help', 'support', 'faq',
+                           'cookie', 'legal', 'social', 'useful information', 'other links']):
                         debug_log(f"Skipping non-content H3: {item['text'][:100]}")
+                        continue
+                        
+                    # Skip very short H3s that are likely navigation items
+                    if len(item['text'].split()) <= 2:
+                        debug_log(f"Skipping short H3: {item['text'][:100]}")
                         continue
                         
                     # If we have a current H3 section, save it
@@ -816,8 +852,16 @@ def extract_sections_from_json(json_data):
                     
                 # Skip paragraphs that look like they're from header/footer
                 if any(non_content in item['text'].lower() for non_content in 
-                      ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use']):
+                      ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use',
+                       'home', 'about', 'contact', 'services', 'products', 'login', 'sign up', 'register',
+                       'search', 'cart', 'account', 'profile', 'settings', 'help', 'support', 'faq',
+                       'cookie', 'legal', 'social', 'useful information', 'other links']):
                     debug_log(f"Skipping non-content paragraph: {item['text'][:100]}")
+                    continue
+                    
+                # Skip very short paragraphs that are likely navigation items
+                if len(item['text'].split()) <= 2:
+                    debug_log(f"Skipping short paragraph: {item['text'][:100]}")
                     continue
                     
                 if current_h3_section:
