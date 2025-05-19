@@ -624,9 +624,12 @@ with tab1:
     
     if keyword_input:
         with st.spinner("Generating embedding..."):
-            keyword_embedding = get_cached_embedding(keyword_input)
+            embeddings = get_cached_embedding(keyword_input)
             
-        if keyword_embedding is not None:
+        if embeddings is not None:
+            # Handle both single embedding and list of embeddings
+            keyword_embedding = embeddings[0] if isinstance(embeddings, list) else embeddings
+            
             # Display embedding information
             st.subheader("Embedding Information")
             st.write(f"Vector dimension: {keyword_embedding.shape[0]}")
