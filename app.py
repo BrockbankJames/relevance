@@ -1806,10 +1806,14 @@ with tab2:
                                 st.error(f"Failed to generate embeddings for keywords {i+1} to {min(i+batch_size, len(keywords))}. Please try again.")
                                 st.stop()
                             
+                            # Convert single embedding to list for consistent processing
+                            if isinstance(batch_embeddings, np.ndarray):
+                                batch_embeddings = [batch_embeddings]
+                            
                             # Validate and normalize each embedding
                             valid_embeddings = []
-                            for i, emb in enumerate(batch_embeddings):
-                                debug_log(f"\nValidating embedding {i+1} from batch:")
+                            for j, emb in enumerate(batch_embeddings):
+                                debug_log(f"\nValidating embedding {j+1} from batch:")
                                 debug_log(f"Type: {type(emb)}")
                                 debug_log(f"Shape: {emb.shape if hasattr(emb, 'shape') else 'no shape'}")
                                 
