@@ -46,114 +46,59 @@ def debug_log(message):
         st.write(f"Debug: {message}")
 
 def get_vertex_ai_token():
-    """Get authentication token for Vertex AI with quota management"""
+    """Get authentication token for Vertex AI API"""
     try:
-        # Check if we have a cached token that's still valid
-        if 'vertex_ai_token' in st.session_state:
-            token_data = st.session_state.vertex_ai_token
-            if time.time() < token_data['expires_at']:
-                return token_data['token']
-        
-        # Get credentials and token
-        credentials, project = google.auth.default()
+        debug_log("Getting authentication token...")
+        credentials = service_account.Credentials.from_service_account_info(
+            json.loads(st.secrets['GOOGLE_APPLICATION_CREDENTIALS_JSON']),
+            scopes=['https://www.googleapis.com/auth/cloud-platform']
+        )
         credentials.refresh(Request())
         token = credentials.token
-        
-        # Cache the token with expiration (tokens typically valid for 1 hour)
-        st.session_state.vertex_ai_token = {
-            'token': token,
-            'expires_at': time.time() + 3500  # Cache for ~58 minutes
-        }
-        
+        debug_log("Successfully obtained authentication token")
         return token
     except Exception as e:
         st.error(f"Error getting authentication token: {str(e)}")
+        debug_log(f"Token error details: {str(e)}")
         return None
 
-def check_quota_status():
-    """Check if we're approaching quota limits"""
-    if 'quota_status' not in st.session_state:
-        st.session_state.quota_status = {
-            'last_reset': time.time(),
-            'requests_this_hour': 0,
-            'last_error_time': 0,
-            'consecutive_errors': 0
-        }
-    
-    current_time = time.time()
-    quota_status = st.session_state.quota_status
-    
-    # Reset counter if an hour has passed
-    if current_time - quota_status['last_reset'] > 3600:
-        quota_status['last_reset'] = current_time
-        quota_status['requests_this_hour'] = 0
-        quota_status['consecutive_errors'] = 0
-    
-    # Check if we've had too many consecutive errors
-    if quota_status['consecutive_errors'] >= 3:
-        if current_time - quota_status['last_error_time'] < 300:  # 5 minutes
-            return False, "Too many consecutive errors. Please wait 5 minutes before trying again."
-        quota_status['consecutive_errors'] = 0
-    
-    # Check if we're approaching hourly limit (assuming 1000 requests per hour)
-    if quota_status['requests_this_hour'] >= 900:
-        return False, "Approaching hourly quota limit. Please try again in a few minutes."
-    
-    return True, None
-
-def update_quota_status(success=True):
-    """Update quota status after a request"""
-    if 'quota_status' not in st.session_state:
-        st.session_state.quota_status = {
-            'last_reset': time.time(),
-            'requests_this_hour': 0,
-            'last_error_time': 0,
-            'consecutive_errors': 0
-        }
-    
-    quota_status = st.session_state.quota_status
-    
-    if success:
-        quota_status['requests_this_hour'] += 1
-        quota_status['consecutive_errors'] = 0
-    else:
-        quota_status['consecutive_errors'] += 1
-        quota_status['last_error_time'] = time.time()
-
 def get_embedding(texts, batch_size=250):
-    """Generate embeddings using Vertex AI text-embedding-005 model via REST API with improved quota management"""
+    """Generate embeddings using Vertex AI text-embedding-005 model via REST API"""
     if isinstance(texts, str):
-        texts = [texts]
-    
+        texts = [texts]  # Convert single text to list
+        
     if not texts or not all(isinstance(text, str) for text in texts):
         st.error("Invalid input: all texts must be non-empty strings")
         return None
-    
+        
     # Clean and validate texts
     texts = [text.strip() for text in texts if text.strip()]
     if not texts:
         st.error("Invalid input: no valid texts provided")
         return None
-    
-    try:
-        # Check quota status before proceeding
-        quota_ok, quota_message = check_quota_status()
-        if not quota_ok:
-            st.warning(quota_message)
-            return None
         
+    try:
         debug_log("\nStarting batch embedding generation...")
         debug_log(f"Number of texts to process: {len(texts)}")
+        for i, text in enumerate(texts[:3]):  # Show first 3 texts
+            debug_log(f"\nText {i+1} preview:")
+            debug_log(f"Length: {len(text)} characters")
+            debug_log(f"First 200 chars: {text[:200]}...")
         
+        # Get project and location from secrets
+        project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
+        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'us-central1')
+        
+        if not project_id:
+            st.error("GOOGLE_CLOUD_PROJECT not found in secrets")
+            return None
+            
         # Get authentication token
         token = get_vertex_ai_token()
         if not token:
-            update_quota_status(success=False)
             return None
-        
+            
         # Prepare the API endpoint
-        project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
-        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'us-central1')
         endpoint = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/publishers/google/models/textembedding-gecko:predict"
         
         headers = {
@@ -161,16 +106,15 @@ def get_embedding(texts, batch_size=250):
             "Content-Type": "application/json"
         }
         
-        # Process texts in batches with improved rate limiting
+        # Process texts in batches
         all_embeddings = []
         current_batch = []
         current_batch_tokens = 0
         
-        # More conservative token estimates
+        # Rough estimate: 1 token ≈ 4 characters for English text
         TOKENS_PER_CHAR = 0.25
-        MAX_TOKENS_PER_TEXT = 4000  # Reduced from 8000
-        MAX_TOKENS_PER_BATCH = 10000  # Reduced from 19000
-        MIN_DELAY_BETWEEN_BATCHES = 3  # Increased from 2
+        MAX_TOKENS_PER_TEXT = 8000  # Slightly under 8,192 to be safe
+        MAX_TOKENS_PER_BATCH = 19000  # Slightly under 20,000 to be safe
         
         for text in texts:
             # Truncate text if it's too long
@@ -180,118 +124,189 @@ def get_embedding(texts, batch_size=250):
             
             text_tokens = len(text) * TOKENS_PER_CHAR
             
-            # Process batch if adding this text would exceed limits
+            # If adding this text would exceed batch limits, process current batch
             if (current_batch_tokens + text_tokens > MAX_TOKENS_PER_BATCH or 
                 len(current_batch) >= batch_size):
                 if current_batch:
-                    success = process_batch(current_batch, endpoint, headers, all_embeddings)
-                    if not success:
-                        update_quota_status(success=False)
-                        return None
-                    update_quota_status(success=True)
-                    time.sleep(MIN_DELAY_BETWEEN_BATCHES)
+                    debug_log(f"\nProcessing batch of {len(current_batch)} texts")
+                    debug_log(f"Batch token estimate: {current_batch_tokens:.0f}")
+                    
+                    data = {
+                        "instances": [{"content": text} for text in current_batch]
+                    }
+                    
+                    # Make the API request with retry logic
+                    max_retries = 3
+                    retry_delay = 5  # Start with 5 second delay
+                    
+                    for attempt in range(max_retries):
+                        try:
+                            response = requests.post(endpoint, headers=headers, json=data)
+                            
+                            if response.status_code == 429:  # Quota exceeded
+                                if attempt < max_retries - 1:
+                                    debug_log(f"Quota exceeded, retrying in {retry_delay} seconds...")
+                                    time.sleep(retry_delay)
+                                    retry_delay *= 2  # Exponential backoff
+                                    continue
+                                else:
+                                    st.error("""
+                                    Quota exceeded for Vertex AI. Please try again later or request a quota increase.
+                                    You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
+                                    """)
+                                    return None
+                            
+                            if response.status_code != 200:
+                                st.error(f"Error from Vertex AI API: {response.status_code}")
+                                debug_log(f"API Response: {response.text}")
+                                return None
+                                
+                            # Parse the response
+                            result = response.json()
+                            debug_log("Successfully received API response")
+                            
+                            if 'predictions' not in result or not result['predictions']:
+                                st.error("No predictions in API response")
+                                debug_log(f"API Response: {result}")
+                                return None
+                            
+                            # Extract and validate embeddings
+                            batch_embeddings = []
+                            for pred in result['predictions']:
+                                if 'embeddings' not in pred or 'values' not in pred['embeddings']:
+                                    st.error("Invalid prediction format in API response")
+                                    debug_log(f"Prediction structure: {pred}")
+                                    return None
+                                    
+                                values = pred['embeddings']['values']
+                                if not isinstance(values, list):
+                                    st.error("Embedding values is not a list")
+                                    debug_log(f"Values type: {type(values)}")
+                                    return None
+                                    
+                                # Convert to numpy array and validate
+                                embedding = np.array(values, dtype=np.float32)
+                                if embedding.ndim != 1:
+                                    st.error(f"Invalid embedding dimension: {embedding.ndim}")
+                                    debug_log(f"Embedding shape: {embedding.shape}")
+                                    return None
+                                    
+                                batch_embeddings.append(embedding)
+                            
+                            all_embeddings.extend(batch_embeddings)
+                            debug_log(f"Successfully extracted {len(batch_embeddings)} embeddings")
+                            
+                            # Add a delay between batches to avoid rate limits
+                            time.sleep(2)  # 2 second delay between batches
+                            
+                            break  # Success, exit retry loop
+                            
+                        except Exception as e:
+                            if attempt < max_retries - 1:
+                                debug_log(f"Request failed, retrying in {retry_delay} seconds...")
+                                time.sleep(retry_delay)
+                                retry_delay *= 2
+                            else:
+                                raise e
+                    
+                    # Reset batch
                     current_batch = []
                     current_batch_tokens = 0
             
+            # Add text to current batch
             current_batch.append(text)
             current_batch_tokens += text_tokens
         
         # Process any remaining texts
         if current_batch:
-            success = process_batch(current_batch, endpoint, headers, all_embeddings)
-            if not success:
-                update_quota_status(success=False)
-                return None
-            update_quota_status(success=True)
+            debug_log(f"\nProcessing final batch of {len(current_batch)} texts")
+            debug_log(f"Batch token estimate: {current_batch_tokens:.0f}")
+            
+            data = {
+                "instances": [{"content": text} for text in current_batch]
+            }
+            
+            # Make the API request with retry logic
+            max_retries = 3
+            retry_delay = 5
+            
+            for attempt in range(max_retries):
+                try:
+                    response = requests.post(endpoint, headers=headers, json=data)
+                    
+                    if response.status_code == 429:  # Quota exceeded
+                        if attempt < max_retries - 1:
+                            debug_log(f"Quota exceeded, retrying in {retry_delay} seconds...")
+                            time.sleep(retry_delay)
+                            retry_delay *= 2
+                            continue
+                        else:
+                            st.error("""
+                            Quota exceeded for Vertex AI. Please try again later or request a quota increase.
+                            You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
+                            """)
+                            return None
+                    
+                    if response.status_code != 200:
+                        st.error(f"Error from Vertex AI API: {response.status_code}")
+                        debug_log(f"API Response: {response.text}")
+                        return None
+                        
+                    # Parse the response
+                    result = response.json()
+                    
+                    if 'predictions' not in result or not result['predictions']:
+                        st.error("No predictions in API response")
+                        debug_log(f"API Response: {result}")
+                        return None
+                    
+                    # Extract and validate embeddings
+                    batch_embeddings = []
+                    for pred in result['predictions']:
+                        if 'embeddings' not in pred or 'values' not in pred['embeddings']:
+                            st.error("Invalid prediction format in API response")
+                            debug_log(f"Prediction structure: {pred}")
+                            return None
+                            
+                        values = pred['embeddings']['values']
+                        if not isinstance(values, list):
+                            st.error("Embedding values is not a list")
+                            debug_log(f"Values type: {type(values)}")
+                            return None
+                            
+                        # Convert to numpy array and validate
+                        embedding = np.array(values, dtype=np.float32)
+                        if embedding.ndim != 1:
+                            st.error(f"Invalid embedding dimension: {embedding.ndim}")
+                            debug_log(f"Embedding shape: {embedding.shape}")
+                            return None
+                            
+                        batch_embeddings.append(embedding)
+                    
+                    all_embeddings.extend(batch_embeddings)
+                    debug_log(f"Successfully extracted {len(batch_embeddings)} embeddings")
+                    break  # Success, exit retry loop
+                    
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        debug_log(f"Request failed, retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                    else:
+                        raise e
         
         if len(all_embeddings) != len(texts):
             st.error(f"Expected {len(texts)} embeddings but got {len(all_embeddings)}")
             return None
-        
+            
         debug_log(f"Successfully generated all {len(all_embeddings)} embeddings")
+        # Return single embedding for single text input, list for multiple texts
         return all_embeddings[0] if len(texts) == 1 else all_embeddings
         
     except Exception as e:
         st.error(f"Error in get_embedding: {str(e)}")
         debug_log(f"Full error details: {str(e)}")
-        update_quota_status(success=False)
         return None
-
-def process_batch(batch, endpoint, headers, all_embeddings):
-    """Process a single batch of texts with improved error handling"""
-    debug_log(f"\nProcessing batch of {len(batch)} texts")
-    debug_log(f"Batch token estimate: {sum(len(text) * 0.25 for text in batch):.0f}")
-    
-    data = {
-        "instances": [{"content": text} for text in batch]
-    }
-    
-    max_retries = 3
-    retry_delay = 5
-    
-    for attempt in range(max_retries):
-        try:
-            response = requests.post(endpoint, headers=headers, json=data)
-            
-            if response.status_code == 429:  # Quota exceeded
-                if attempt < max_retries - 1:
-                    debug_log(f"Quota exceeded, retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
-                    continue
-                else:
-                    st.error("""
-                    Quota exceeded for Vertex AI. Please try again later or request a quota increase.
-                    You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
-                    """)
-                    return False
-            
-            if response.status_code != 200:
-                st.error(f"Error from Vertex AI API: {response.status_code}")
-                debug_log(f"API Response: {response.text}")
-                return False
-            
-            result = response.json()
-            if 'predictions' not in result or not result['predictions']:
-                st.error("No predictions in API response")
-                debug_log(f"API Response: {result}")
-                return False
-            
-            # Extract and validate embeddings
-            batch_embeddings = []
-            for pred in result['predictions']:
-                if 'embeddings' not in pred or 'values' not in pred['embeddings']:
-                    st.error("Invalid prediction format in API response")
-                    debug_log(f"Prediction structure: {pred}")
-                    return False
-                
-                values = pred['embeddings']['values']
-                if not isinstance(values, list):
-                    st.error("Embedding values is not a list")
-                    debug_log(f"Values type: {type(values)}")
-                    return False
-                
-                embedding = np.array(values, dtype=np.float32)
-                if embedding.ndim != 1:
-                    st.error(f"Invalid embedding dimension: {embedding.ndim}")
-                    debug_log(f"Embedding shape: {embedding.shape}")
-                    return False
-                
-                batch_embeddings.append(embedding)
-            
-            all_embeddings.extend(batch_embeddings)
-            debug_log(f"Successfully extracted {len(batch_embeddings)} embeddings")
-            return True
-            
-        except Exception as e:
-            if attempt < max_retries - 1:
-                debug_log(f"Request failed, retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-                retry_delay *= 2
-            else:
-                raise e
-    
-    return False
 
 def get_cached_embedding(texts, batch_size=250):
     """Get embeddings from cache or generate new ones, maintaining section structure"""
@@ -2611,6 +2626,9 @@ with tab5:
     else:
         st.warning("Please enter at least one URL to analyze.")
 
+# Add footer
+st.markdown("---")
+st.markdown("Built with Streamlit and Google's Vertex AI text-embedding-005 model") 
 # Add footer
 st.markdown("---")
 st.markdown("Built with Streamlit and Google's Vertex AI text-embedding-005 model") 
