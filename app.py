@@ -533,6 +533,26 @@ def extract_sections_from_json(json_data):
                     # Create a single soup object from all content
                     soup = BeautifulSoup(combined_html, 'html.parser')
                     
+                    # Debug: Log all elements with classes
+                    debug_log("\nSearching for elements with classes...")
+                    all_elements_with_classes = soup.find_all(class_=True)
+                    debug_log(f"Found {len(all_elements_with_classes)} elements with classes")
+                    
+                    # Debug: Log all elements that might be navigation
+                    debug_log("\nChecking for navigation elements...")
+                    for element in all_elements_with_classes:
+                        classes = element.get('class', [])
+                        if classes:
+                            debug_log(f"\nElement: {element.name}")
+                            debug_log(f"Classes: {classes}")
+                            debug_log(f"HTML: {element.prettify()[:200]}")
+                            debug_log(f"Text content: {element.get_text().strip()[:200]}")
+                            
+                            # Check each class individually
+                            for class_name in classes:
+                                if 'nav' in class_name.lower() or 'navigation' in class_name.lower():
+                                    debug_log(f"FOUND NAVIGATION CLASS: {class_name}")
+                    
                     # Remove header, nav, and footer elements
                     for tag in ['header', 'nav', 'footer']:
                         for element in soup.find_all(tag):
@@ -541,17 +561,48 @@ def extract_sections_from_json(json_data):
                             element.decompose()
                     
                     # Remove elements with nav/navigation in class names (as substrings)
+                    debug_log("\nRemoving elements with navigation classes...")
                     for element in soup.find_all(class_=True):
-                        classes = ' '.join(element.get('class', [])).lower()
-                        if any(nav_term in class_name for class_name in element.get('class', []) for nav_term in ['nav', 'navigation']):
-                            debug_log(f"\nRemoving element with nav class:")
-                            debug_log(f"Classes: {element.get('class', [])}")
-                            debug_log(f"Content: {element.get_text().strip()[:200]}")
-                            element.decompose()
+                        classes = element.get('class', [])
+                        if classes:
+                            debug_log(f"\nChecking element: {element.name}")
+                            debug_log(f"Classes: {classes}")
+                            
+                            # Check each class individually and log the decision
+                            should_remove = False
+                            for class_name in classes:
+                                class_name_lower = class_name.lower()
+                                if 'nav' in class_name_lower or 'navigation' in class_name_lower:
+                                    debug_log(f"MATCH FOUND - Class '{class_name}' contains navigation term")
+                                    should_remove = True
+                                else:
+                                    debug_log(f"No match in class '{class_name}'")
+                            
+                            if should_remove:
+                                debug_log(f"REMOVING element with classes: {classes}")
+                                debug_log(f"Content being removed: {element.get_text().strip()[:200]}")
+                                element.decompose()
+                            else:
+                                debug_log("Keeping element - no navigation classes found")
                     
                     # Get the cleaned HTML
                     cleaned_html = str(soup)
-                    debug_log(f"Cleaned HTML length: {len(cleaned_html)} characters")
+                    debug_log(f"\nCleaned HTML length: {len(cleaned_html)} characters")
+                    
+                    # Verify removal
+                    remaining_nav_elements = soup.find_all(class_=True)
+                    nav_elements_found = False
+                    for element in remaining_nav_elements:
+                        classes = element.get('class', [])
+                        if any('nav' in c.lower() or 'navigation' in c.lower() for c in classes):
+                            nav_elements_found = True
+                            debug_log(f"\nWARNING: Found remaining navigation element!")
+                            debug_log(f"Element: {element.name}")
+                            debug_log(f"Classes: {classes}")
+                            debug_log(f"Content: {element.get_text().strip()[:200]}")
+                    
+                    if not nav_elements_found:
+                        debug_log("\nNo remaining navigation elements found")
                     
                     # Create new soup from cleaned HTML
                     soup = BeautifulSoup(cleaned_html, 'html.parser')
