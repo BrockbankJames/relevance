@@ -1258,7 +1258,7 @@ def calculate_weighted_similarity(sections, keyword_embedding):
         return 0.0, [], {}
 
 # Create tabs for different input methods
-tab1, tab2, tab3 = st.tabs(["Keyword Embedding", "Webpage Analysis", "Link Profile Analysis"])
+tab1, tab2, tab3, tab4 = st.tabs(["Keyword Embedding", "Webpage Analysis", "Link Profile Analysis", "URL Comparison"])
 
 with tab1:
     st.subheader("Generate Embedding for Keyword")
@@ -1671,8 +1671,6 @@ with tab3:
                         file_name="url_analysis.csv",
                         mime="text/csv"
                     )
-                except Exception as e:
-                    st.error(f"Error calculating or displaying results: {str(e)}")
                 else:
                     st.error("""
                     No URLs were successfully analyzed. This could be due to:
@@ -1684,6 +1682,196 @@ with tab3:
                     """)
     else:
         st.warning("Please enter at least one URL to analyze.")
+
+with tab4:
+    st.subheader("Compare Multiple URLs")
+    st.markdown("""
+    Enter a keyword and up to 10 URLs to compare their similarity to the keyword.
+    The app will analyze each URL and show:
+    - How similar each URL is to the keyword
+    - Most relevant URLs ranked by similarity
+    - Individual URL scores and section details
+    """)
+    
+    # Get keyword input
+    keyword_input = st.text_input("Enter keyword:", placeholder="Enter your keyword here...")
+    
+    # Get URLs input
+    urls_input = st.text_area(
+        "Enter URLs to compare (one per line, max 10):",
+        height=150,
+        placeholder="https://example1.com\nhttps://example2.com\nhttps://example3.com"
+    )
+    
+    if keyword_input and urls_input:
+        # Process URLs
+        urls = [url.strip() for url in urls_input.split('\n') if url.strip()]
+        
+        if len(urls) > 10:
+            st.warning("Maximum 10 URLs allowed. Only the first 10 will be analyzed.")
+            urls = urls[:10]
+        
+        if not urls:
+            st.warning("Please enter at least one valid URL to analyze.")
+        else:
+            # Generate embedding for keyword
+            with st.spinner("Generating keyword embedding..."):
+                keyword_embedding = get_cached_embedding(keyword_input)
+                if keyword_embedding is None:
+                    st.error("Failed to generate keyword embedding. Please try again.")
+                    st.stop()
+            
+            # Store results for each URL
+            url_results = []
+            
+            # Process each URL
+            with st.spinner(f"Analyzing {len(urls)} URLs..."):
+                for url in urls:
+                    try:
+                        # Scrape and analyze the URL
+                        sections = scrape_webpage(url)
+                        if not sections:
+                            st.warning(f"Could not scrape content from {url}")
+                            continue
+                            
+                        # Generate embeddings for all sections
+                        sections_with_embeddings = get_cached_embedding(sections, batch_size=5)
+                        
+                        if sections_with_embeddings is None:
+                            st.warning(f"""
+                            Could not generate embeddings for {url}. This could be due to:
+                            1. Vertex AI quota limits - Please try again later
+                            2. Invalid content - Please check if the webpage has valid text content
+                            """)
+                            continue
+                        
+                        try:
+                            # Calculate weighted similarity across all sections
+                            weighted_similarity, detailed_scores, metrics = calculate_weighted_similarity(
+                                sections_with_embeddings, 
+                                keyword_embedding
+                            )
+                            
+                            url_results.append({
+                                'url': url,
+                                'weighted_similarity': weighted_similarity,
+                                'raw_avg_similarity': metrics['raw_avg'],
+                                'raw_max_similarity': metrics['raw_max'],
+                                'raw_min_similarity': metrics['raw_min'],
+                                'similarity_std_dev': metrics['std_dev'],
+                                'sections_count': metrics['section_count'],
+                                'most_similar_section': detailed_scores[0]['heading'] if detailed_scores else 'No heading',
+                                'most_similar_text': detailed_scores[0]['text_preview'] if detailed_scores else '',
+                                'detailed_scores': detailed_scores
+                            })
+                        except Exception as e:
+                            st.warning(f"Error processing embeddings for {url}: {str(e)}")
+                            continue
+                            
+                    except Exception as e:
+                        st.warning(f"Error processing {url}: {str(e)}")
+                        continue
+            
+            if url_results:
+                # Sort URLs by similarity
+                url_results.sort(key=lambda x: x['weighted_similarity'], reverse=True)
+                
+                # Display overall results
+                st.subheader("Comparison Results")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric(
+                        label="Average Weighted Similarity",
+                        value=f"{np.mean([r['weighted_similarity'] for r in url_results]):.3f}",
+                        help="Weighted average similarity between the keyword and all analyzed URLs"
+                    )
+                with col2:
+                    st.metric(
+                        label="Highest Similarity",
+                        value=f"{np.max([r['raw_max_similarity'] for r in url_results]):.3f}",
+                        help="Highest similarity score found across all URLs"
+                    )
+                with col3:
+                    st.metric(
+                        label="Average Std Dev",
+                        value=f"{np.mean([r['similarity_std_dev'] for r in url_results]):.3f}",
+                        help="Average standard deviation of similarity scores"
+                    )
+                
+                # Display top 3 most similar URLs
+                st.subheader("Most Similar URLs")
+                for i, result in enumerate(url_results[:3], 1):
+                    st.markdown(f"""
+                    **{i}. {result['url']}**  
+                    Weighted Similarity: {result['weighted_similarity']:.3f}  
+                    Raw Average: {result['raw_avg_similarity']:.3f}  
+                    Raw Max: {result['raw_max_similarity']:.3f}  
+                    Raw Min: {result['raw_min_similarity']:.3f}  
+                    Std Dev: {result['similarity_std_dev']:.3f}  
+                    Sections analyzed: {result['sections_count']}  
+                    Most similar section: {result['most_similar_section']}  
+                    Preview: {result['most_similar_text']}
+                    """)
+                    
+                    # Show detailed scores for top sections
+                    if result['detailed_scores']:
+                        st.markdown("**Top 3 Most Similar Sections:**")
+                        for j, score in enumerate(result['detailed_scores'][:3], 1):
+                            st.markdown(f"""
+                            {j}. {score['heading']}  
+                            Similarity: {score['similarity']:.3f}  
+                            Weight: {score['weight']:.3f}  
+                            Length: {score['length']} words  
+                            Preview: {score['text_preview']}
+                            """)
+            
+                # Display all URLs in a table
+                st.subheader("All URL Similarities")
+                df = pd.DataFrame(url_results)
+                # Round numeric columns
+                numeric_cols = ['weighted_similarity', 'raw_avg_similarity', 'raw_max_similarity', 
+                              'raw_min_similarity', 'similarity_std_dev']
+                df[numeric_cols] = df[numeric_cols].round(3)
+                
+                # Rename columns
+                df = df.rename(columns={
+                    'url': 'URL',
+                    'weighted_similarity': 'Weighted Similarity',
+                    'raw_avg_similarity': 'Raw Average',
+                    'raw_max_similarity': 'Raw Maximum',
+                    'raw_min_similarity': 'Raw Minimum',
+                    'similarity_std_dev': 'Std Deviation',
+                    'sections_count': 'Sections Analyzed',
+                    'most_similar_section': 'Most Similar Section',
+                    'most_similar_text': 'Section Preview'
+                })
+                
+                # Reorder columns
+                df = df[['URL', 'Weighted Similarity', 'Raw Average', 'Raw Maximum', 
+                        'Raw Minimum', 'Std Deviation', 'Sections Analyzed', 
+                        'Most Similar Section', 'Section Preview']]
+                
+                st.dataframe(df, use_container_width=True)
+                
+                # Add download button for results
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="Download Analysis Results as CSV",
+                    data=csv,
+                    file_name="url_comparison.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.error("""
+                No URLs were successfully analyzed. This could be due to:
+                1. Vertex AI quota limits - Please try again later or request a quota increase
+                2. Invalid content - Please check if the webpages have valid text content
+                3. Access issues - Some URLs may be blocking access
+                
+                You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
+                """)
+    else:
+        st.warning("Please enter both a keyword and at least one URL to analyze.")
 
 # Add footer
 st.markdown("---")
