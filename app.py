@@ -523,21 +523,6 @@ def extract_sections_from_json(json_data):
             combined_html = ''
             for content_html in data['main_content']:
                 if content_html:
-                    # Check for "Retirement" content
-                    if 'retirement' in content_html.lower():
-                        debug_log("\nFound 'Retirement' content in HTML:")
-                        debug_log(content_html[:500])
-                        debug_log("Parent element structure:")
-                        soup_temp = BeautifulSoup(content_html, 'html.parser')
-                        retirement_elements = soup_temp.find_all(string=lambda text: text and 'retirement' in text.lower())
-                        for elem in retirement_elements:
-                            debug_log(f"\nElement containing 'Retirement':")
-                            debug_log(f"Tag: {elem.parent.name}")
-                            debug_log(f"Classes: {elem.parent.get('class', [])}")
-                            debug_log(f"ID: {elem.parent.get('id', 'None')}")
-                            debug_log(f"Parent: {elem.parent.parent.name if elem.parent.parent else 'None'}")
-                            debug_log(f"Full context: {elem.parent.prettify()[:500]}")
-                    
                     combined_html += content_html
             
             if combined_html:
@@ -548,36 +533,29 @@ def extract_sections_from_json(json_data):
                     # Create a single soup object from all content
                     soup = BeautifulSoup(combined_html, 'html.parser')
                     
-                    # Log all elements containing "retirement" before removal
-                    retirement_elements = soup.find_all(string=lambda text: text and 'retirement' in text.lower())
-                    if retirement_elements:
-                        debug_log("\nFound 'Retirement' elements before removal:")
-                        for elem in retirement_elements:
-                            debug_log(f"\nElement: {elem.parent.name}")
-                            debug_log(f"Classes: {elem.parent.get('class', [])}")
-                            debug_log(f"ID: {elem.parent.get('id', 'None')}")
-                            debug_log(f"Parent: {elem.parent.parent.name if elem.parent.parent else 'None'}")
-                            debug_log(f"Full context: {elem.parent.prettify()[:500]}")
+                    # Find and remove navigation elements by tag and class
+                    nav_elements = []
                     
-                    # Remove header, footer, and nav elements
-                    for tag in soup.find_all(['header', 'footer', 'nav']):
-                        debug_log(f"\nRemoving {tag.name} element:")
-                        debug_log(f"Content: {tag.get_text().strip()[:200]}")
-                        debug_log(f"Classes: {tag.get('class', [])}")
-                        debug_log(f"ID: {tag.get('id', 'None')}")
-                        debug_log(f"Parent: {tag.parent.name if tag.parent else 'None'}")
-                        tag.decompose()
+                    # Find elements by tag
+                    nav_elements.extend(soup.find_all(['header', 'footer', 'nav']))
                     
-                    # Check for remaining "retirement" elements after removal
-                    retirement_elements = soup.find_all(string=lambda text: text and 'retirement' in text.lower())
-                    if retirement_elements:
-                        debug_log("\nWARNING: Found 'Retirement' elements after removal:")
-                        for elem in retirement_elements:
-                            debug_log(f"\nElement: {elem.parent.name}")
-                            debug_log(f"Classes: {elem.parent.get('class', [])}")
-                            debug_log(f"ID: {elem.parent.get('id', 'None')}")
-                            debug_log(f"Parent: {elem.parent.parent.name if elem.parent.parent else 'None'}")
-                            debug_log(f"Full context: {elem.parent.prettify()[:500]}")
+                    # Find elements by class (case-insensitive)
+                    for element in soup.find_all(class_=True):
+                        classes = ' '.join(element.get('class', [])).lower()
+                        if any(nav_term in classes for nav_term in ['nav', 'navigation', 'menu']):
+                            nav_elements.append(element)
+                    
+                    # Log and remove found navigation elements
+                    if nav_elements:
+                        debug_log(f"\nFound {len(nav_elements)} navigation elements:")
+                        for elem in nav_elements:
+                            debug_log(f"\nRemoving navigation element:")
+                            debug_log(f"Tag: {elem.name}")
+                            debug_log(f"Classes: {elem.get('class', [])}")
+                            debug_log(f"ID: {elem.get('id', 'None')}")
+                            debug_log(f"Parent: {elem.parent.name if elem.parent else 'None'}")
+                            debug_log(f"Content: {elem.get_text().strip()[:200]}")
+                            elem.decompose()
                     
                     # Get the cleaned HTML
                     cleaned_html = str(soup)
@@ -590,19 +568,18 @@ def extract_sections_from_json(json_data):
                     headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
                     debug_log(f"\nFound {len(headings)} heading tags")
                     
-                    # Log all headings for debugging
-                    for h in headings:
-                        debug_log(f"\nHeading: {h.name}")
-                        debug_log(f"Text: {h.get_text().strip()}")
-                        debug_log(f"Classes: {h.get('class', [])}")
-                        debug_log(f"ID: {h.get('id', 'None')}")
-                        debug_log(f"Parent: {h.parent.name if h.parent else 'None'}")
-                    
                     # Process headings in order, maintaining hierarchy
                     current_section = None
                     current_content = []
                     
                     for heading in headings:
+                        # Skip headings that are part of navigation
+                        heading_classes = ' '.join(heading.get('class', [])).lower()
+                        if any(nav_term in heading_classes for nav_term in ['nav', 'navigation', 'menu']):
+                            debug_log(f"\nSkipping navigation heading: {heading.get_text().strip()}")
+                            debug_log(f"Classes: {heading.get('class', [])}")
+                            continue
+                        
                         # Get heading text
                         heading_text = heading.get_text().strip()
                         if not heading_text:
@@ -617,13 +594,6 @@ def extract_sections_from_json(json_data):
                             
                             # Only add meaningful sections
                             if len(current_section['text'].split()) > 3:
-                                # Check if section contains "retirement"
-                                if 'retirement' in current_section['text'].lower():
-                                    debug_log(f"\nWARNING: Section contains 'Retirement':")
-                                    debug_log(f"Heading: {current_section['heading']}")
-                                    debug_log(f"Text: {current_section['text'][:200]}")
-                                    debug_log(f"Content items: {len(current_section['content'])}")
-                                
                                 sections.append(current_section)
                                 debug_log(f"Completed section: {current_section['heading'][:100]}")
                                 debug_log(f"Content items: {len(current_section['content'])}")
@@ -646,18 +616,18 @@ def extract_sections_from_json(json_data):
                                              current.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] and 
                                              int(current.name[1]) <= int(heading.name[1])):
                             if hasattr(current, 'name'):
+                                # Skip elements that are part of navigation
+                                if current.get('class'):
+                                    current_classes = ' '.join(current.get('class', [])).lower()
+                                    if any(nav_term in current_classes for nav_term in ['nav', 'navigation', 'menu']):
+                                        debug_log(f"\nSkipping navigation content: {current.get_text().strip()[:100]}")
+                                        debug_log(f"Classes: {current.get('class', [])}")
+                                        current = current.next_sibling
+                                        continue
+                                
                                 # Get text from any element
                                 text = current.get_text().strip()
                                 if text and len(text.split()) > 2:  # Skip very short text
-                                    # Check if content contains "retirement"
-                                    if 'retirement' in text.lower():
-                                        debug_log(f"\nFound 'Retirement' in content:")
-                                        debug_log(f"Element: {current.name}")
-                                        debug_log(f"Classes: {current.get('class', [])}")
-                                        debug_log(f"ID: {current.get('id', 'None')}")
-                                        debug_log(f"Parent: {current.parent.name if current.parent else 'None'}")
-                                        debug_log(f"Text: {text[:200]}")
-                                    
                                     current_content.append(text)
                                     debug_log(f"Added content: {text[:100]}")
                             current = current.next_sibling
@@ -669,13 +639,6 @@ def extract_sections_from_json(json_data):
                             current_section['text'] = f"{current_section['heading']} {' '.join(current_section['content'])}"
                         
                         if len(current_section['text'].split()) > 3:
-                            # Check if section contains "retirement"
-                            if 'retirement' in current_section['text'].lower():
-                                debug_log(f"\nWARNING: Final section contains 'Retirement':")
-                                debug_log(f"Heading: {current_section['heading']}")
-                                debug_log(f"Text: {current_section['text'][:200]}")
-                                debug_log(f"Content items: {len(current_section['content'])}")
-                            
                             sections.append(current_section)
                             debug_log(f"Completed final section: {current_section['heading'][:100]}")
                             debug_log(f"Content items: {len(current_section['content'])}")
@@ -695,17 +658,14 @@ def extract_sections_from_json(json_data):
                     content_elements = []
                     for element in body.descendants:
                         if element.name and element.name not in ['script', 'style', 'meta', 'link']:
+                            # Skip elements that are part of navigation
+                            if element.get('class'):
+                                element_classes = ' '.join(element.get('class', [])).lower()
+                                if any(nav_term in element_classes for nav_term in ['nav', 'navigation', 'menu']):
+                                    continue
+                            
                             text = element.get_text().strip()
                             if text and len(text.split()) > 2:  # Skip very short text
-                                # Check if content contains "retirement"
-                                if 'retirement' in text.lower():
-                                    debug_log(f"\nFound 'Retirement' in fallback content:")
-                                    debug_log(f"Element: {element.name}")
-                                    debug_log(f"Classes: {element.get('class', [])}")
-                                    debug_log(f"ID: {element.get('id', 'None')}")
-                                    debug_log(f"Parent: {element.parent.name if element.parent else 'None'}")
-                                    debug_log(f"Text: {text[:200]}")
-                                
                                 content_elements.append(text)
                     
                     if content_elements:
@@ -724,10 +684,6 @@ def extract_sections_from_json(json_data):
             debug_log(f"Section {i+1} ({section['type']}): {section['heading'][:100]}")
             debug_log(f"  Text length: {len(section['text'])} characters")
             debug_log(f"  Content items: {len(section['content'])}")
-            # Check if section contains "retirement"
-            if 'retirement' in section['text'].lower():
-                debug_log(f"  WARNING: Section contains 'Retirement'!")
-                debug_log(f"  Text preview: {section['text'][:200]}")
         
         return sections
         
