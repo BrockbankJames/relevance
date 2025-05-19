@@ -99,35 +99,56 @@ def get_embedding(text):
     try:
         debug_log("Starting embedding generation...")
         debug_log(f"Input text length: {len(text)} characters")
+        debug_log(f"Input text: {text[:100]}...")  # Log first 100 chars of input
         
         # Initialize the model
-        debug_log("Initializing model...")
+        debug_log("About to initialize TextEmbeddingModel...")
         try:
+            debug_log("Calling TextEmbeddingModel.from_pretrained...")
             model = TextEmbeddingModel.from_pretrained("text-embedding-005")
             debug_log("Model initialized successfully")
+            debug_log(f"Model type: {type(model)}")
         except Exception as e:
             st.error(f"Error initializing model: {str(e)}")
             debug_log(f"Model initialization error details: {str(e)}")
+            debug_log(f"Error type: {type(e)}")
+            debug_log(f"Error args: {e.args}")
             return None
         
         # Get embeddings
-        debug_log("Getting embeddings...")
+        debug_log("About to call get_embeddings...")
         try:
-            embeddings = model.get_embeddings([text])
-            debug_log("Embeddings generated successfully")
+            debug_log("Preparing text for embedding...")
+            texts_to_embed = [text]
+            debug_log(f"Number of texts to embed: {len(texts_to_embed)}")
+            
+            debug_log("Calling model.get_embeddings...")
+            embeddings = model.get_embeddings(texts_to_embed)
+            debug_log("get_embeddings call completed")
+            
+            debug_log("Processing embeddings response...")
+            debug_log(f"Embeddings type: {type(embeddings)}")
+            debug_log(f"Number of embeddings returned: {len(embeddings)}")
             
             # Extract the embedding from the response
+            debug_log("Extracting embedding values...")
             embedding = np.array(embeddings[0].values)
             debug_log(f"Embedding shape: {embedding.shape}")
+            debug_log(f"Embedding type: {embedding.dtype}")
+            debug_log("Embedding generation complete!")
             return embedding
         except Exception as e:
             st.error(f"Error getting embeddings: {str(e)}")
             debug_log(f"Embedding generation error details: {str(e)}")
+            debug_log(f"Error type: {type(e)}")
+            debug_log(f"Error args: {e.args}")
             return None
             
     except Exception as e:
         st.error(f"Error in get_embedding: {str(e)}")
         debug_log(f"Full error details: {str(e)}")
+        debug_log(f"Error type: {type(e)}")
+        debug_log(f"Error args: {e.args}")
         return None
 
 def scrape_webpage(url):
