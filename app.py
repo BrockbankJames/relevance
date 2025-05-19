@@ -1508,7 +1508,7 @@ def calculate_weighted_similarity(sections, keyword_embedding):
         return 0.0, [], {}
 
 # Create tabs for different input methods
-tab1, tab2, tab3, tab4 = st.tabs(["Keyword Embedding", "Webpage Analysis", "Link Profile Analysis", "URL Comparison"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["Keyword Embedding", "Keyword Cluster Embeddings", "Webpage Analysis", "Link Profile Analysis", "URL Comparison"])
 
 with tab1:
     st.subheader("Generate Embedding for Keyword")
@@ -1589,10 +1589,205 @@ with tab1:
             debug_log("get_cached_embedding returned None")
 
 with tab2:
+    st.subheader("Generate Embeddings for Keyword Cluster")
+    
+    # Input for cluster name
+    cluster_name = st.text_input(
+        "Enter cluster name:",
+        placeholder="e.g., Car Insurance Terms, Home Insurance Keywords, etc."
+    )
+    
+    # Input for keywords
+    keywords_input = st.text_area(
+        "Enter keywords (one per line):",
+        height=200,
+        placeholder="Enter your keywords here, one per line...\ne.g.,\ncar insurance\nauto insurance\nvehicle insurance"
+    )
+    
+    if cluster_name and keywords_input:
+        # Process keywords
+        keywords = [k.strip() for k in keywords_input.split('\n') if k.strip()]
+        
+        if not keywords:
+            st.warning("Please enter at least one keyword.")
+        else:
+            with st.spinner(f"Generating embeddings for {len(keywords)} keywords..."):
+                # Generate embeddings for each keyword
+                keyword_embeddings = {}
+                progress_bar = st.progress(0)
+                
+                for i, keyword in enumerate(keywords):
+                    debug_log(f"\nProcessing keyword {i+1}/{len(keywords)}: {keyword}")
+                    embedding = get_cached_embedding(keyword)
+                    
+                    if embedding is not None and isinstance(embedding, np.ndarray):
+                        keyword_embeddings[keyword] = embedding
+                        debug_log(f"Successfully generated embedding for: {keyword}")
+                    else:
+                        st.warning(f"Failed to generate embedding for: {keyword}")
+                    
+                    # Update progress
+                    progress_bar.progress((i + 1) / len(keywords))
+                
+                if keyword_embeddings:
+                    # Calculate average cluster embedding
+                    cluster_embedding = np.mean(list(keyword_embeddings.values()), axis=0)
+                    
+                    # Display results
+                    st.subheader("Cluster Results")
+                    
+                    # Display cluster information
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("Cluster Name", cluster_name)
+                    with col2:
+                        st.metric("Number of Keywords", len(keyword_embeddings))
+                    
+                    # Display individual keyword embeddings
+                    st.subheader("Individual Keyword Embeddings")
+                    for keyword, embedding in keyword_embeddings.items():
+                        with st.expander(f"Embedding for: {keyword}"):
+                            st.write(f"Vector dimension: {embedding.shape[0]}")
+                            st.write(f"Vector shape: {embedding.shape}")
+                            st.write(f"Data type: {embedding.dtype}")
+                            st.code(embedding.tolist())
+                            
+                            # Add download button for individual embedding
+                            st.download_button(
+                                label=f"Download {keyword} Embedding as CSV",
+                                data=",".join(map(str, embedding)),
+                                file_name=f"{keyword.lower().replace(' ', '_')}_embedding.csv",
+                                mime="text/csv"
+                            )
+                    
+                    # Display cluster embedding
+                    st.subheader("Cluster Average Embedding")
+                    st.write(f"Vector dimension: {cluster_embedding.shape[0]}")
+                    st.write(f"Vector shape: {cluster_embedding.shape}")
+                    st.write(f"Data type: {cluster_embedding.dtype}")
+                    st.code(cluster_embedding.tolist())
+                    
+                    # Add download button for cluster embedding
+                    st.download_button(
+                        label="Download Cluster Embedding as CSV",
+                        data=",".join(map(str, cluster_embedding)),
+                        file_name=f"{cluster_name.lower().replace(' ', '_')}_cluster_embedding.csv",
+                        mime="text/csv"
+                    )
+                    
+                    # Calculate and display similarities between keywords
+                    st.subheader("Keyword Similarities")
+                    similarity_matrix = pd.DataFrame(index=keywords, columns=keywords)
+                    
+                    for k1 in keywords:
+                        for k2 in keywords:
+                            if k1 in keyword_embeddings and k2 in keyword_embeddings:
+                                similarity = calculate_similarity(keyword_embeddings[k1], keyword_embeddings[k2])
+                                similarity_matrix.loc[k1, k2] = similarity
+                    
+                    # Round similarities to 3 decimal places
+                    similarity_matrix = similarity_matrix.round(3)
+                    
+                    # Display similarity matrix
+                    st.write("Similarity Matrix (values show cosine similarity between keywords):")
+                    st.dataframe(similarity_matrix, use_container_width=True)
+                    
+                    # Add download button for similarity matrix
+                    csv = similarity_matrix.to_csv()
+                    st.download_button(
+                        label="Download Similarity Matrix as CSV",
+                        data=csv,
+                        file_name=f"{cluster_name.lower().replace(' ', '_')}_similarities.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.error("""
+                    Failed to generate embeddings for any keywords. This could be due to:
+                    1. Vertex AI quota limits - Please try again later or request a quota increase
+                    2. Invalid content - Please check if the keywords are valid text
+                    
+                    You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
+                    """)
+    else:
+        st.info("Please enter both a cluster name and at least one keyword to generate embeddings.")
+
+with tab3:
     st.subheader("Analyze Webpage Content")
+    
+    # Add embedding source selection
+    embedding_source = st.radio(
+        "Select embedding source:",
+        ["Single Keyword", "Keyword Cluster"],
+        horizontal=True,
+        help="Choose whether to analyze the webpage against a single keyword or a cluster of keywords"
+    )
+    
+    # Input fields based on selection
+    if embedding_source == "Single Keyword":
+        keyword_input = st.text_input(
+            "Enter keyword:",
+            placeholder="Enter your keyword here..."
+        )
+        embedding_to_use = None
+        if keyword_input:
+            with st.spinner("Generating keyword embedding..."):
+                embedding_to_use = get_cached_embedding(keyword_input)
+                if embedding_to_use is not None:
+                    st.success("Keyword embedding generated successfully")
+                else:
+                    st.error("Failed to generate keyword embedding")
+    else:  # Keyword Cluster
+        # Get cluster name and keywords
+        cluster_name = st.text_input(
+            "Enter cluster name:",
+            placeholder="e.g., Car Insurance Terms, Home Insurance Keywords, etc."
+        )
+        keywords_input = st.text_area(
+            "Enter keywords (one per line):",
+            height=150,
+            placeholder="Enter your keywords here, one per line...\ne.g.,\ncar insurance\nauto insurance\nvehicle insurance"
+        )
+        
+        if cluster_name and keywords_input:
+            keywords = [k.strip() for k in keywords_input.split('\n') if k.strip()]
+            if keywords:
+                with st.spinner(f"Generating embeddings for {len(keywords)} keywords..."):
+                    # Generate embeddings for each keyword
+                    keyword_embeddings = {}
+                    progress_bar = st.progress(0)
+                    
+                    for i, keyword in enumerate(keywords):
+                        embedding = get_cached_embedding(keyword)
+                        if embedding is not None and isinstance(embedding, np.ndarray):
+                            keyword_embeddings[keyword] = embedding
+                        progress_bar.progress((i + 1) / len(keywords))
+                    
+                    if keyword_embeddings:
+                        # Calculate average cluster embedding
+                        embedding_to_use = np.mean(list(keyword_embeddings.values()), axis=0)
+                        st.success(f"Generated cluster embedding from {len(keyword_embeddings)} keywords")
+                        
+                        # Show cluster details
+                        with st.expander("Cluster Details"):
+                            st.write(f"Cluster Name: {cluster_name}")
+                            st.write(f"Number of Keywords: {len(keyword_embeddings)}")
+                            st.write("Keywords used:")
+                            for keyword in keyword_embeddings.keys():
+                                st.write(f"- {keyword}")
+                    else:
+                        st.error("Failed to generate embeddings for any keywords")
+                        embedding_to_use = None
+            else:
+                st.warning("Please enter at least one keyword")
+                embedding_to_use = None
+        else:
+            st.info("Please enter both cluster name and keywords")
+            embedding_to_use = None
+    
+    # URL input
     url_input = st.text_input("Enter webpage URL:", placeholder="https://example.com")
     
-    if url_input:
+    if url_input and embedding_to_use is not None:
         with st.spinner("Scraping webpage..."):
             sections = scrape_webpage(url_input)
         
@@ -1601,7 +1796,6 @@ with tab2:
             
             # Generate embeddings for all sections in batches
             with st.spinner("Generating embeddings for sections..."):
-                # Pass the full section objects to get_cached_embedding
                 sections_with_embeddings = get_cached_embedding(sections, batch_size=250)
                 
                 if sections_with_embeddings is None:
@@ -1614,126 +1808,129 @@ with tab2:
                     """)
                     st.stop()
             
-            # If we have a keyword embedding from tab1, calculate similarity
-            if 'keyword_embedding' in locals() and isinstance(keyword_embedding, np.ndarray):
-                st.subheader("Similarity Analysis")
-                
-                try:
-                    # Calculate individual section similarities
-                    section_results = []
-                    for section in sections_with_embeddings:
-                        if 'embedding' not in section or not isinstance(section['embedding'], np.ndarray):
-                            continue
-                            
-                        # Calculate similarity for this section only
-                        similarity = calculate_similarity(keyword_embedding, section['embedding'])
-                        text_length = len(section['text'].split())
+            # Calculate similarity
+            st.subheader("Similarity Analysis")
+            
+            try:
+                # Calculate individual section similarities
+                section_results = []
+                for section in sections_with_embeddings:
+                    if 'embedding' not in section or not isinstance(section['embedding'], np.ndarray):
+                        continue
                         
-                        # Calculate weight based on content length
-                        length_weight = min(1.0, text_length / 100)  # Cap at 100 words
-                        
-                        section_results.append({
-                            'section': section,
-                            'raw_similarity': similarity,
-                            'weighted_similarity': similarity * length_weight,  # Weight by content length
-                            'text_length': text_length
-                        })
+                    # Calculate similarity for this section
+                    similarity = calculate_similarity(embedding_to_use, section['embedding'])
+                    text_length = len(section['text'].split())
                     
-                    if not section_results:
-                        st.warning("No valid sections found for similarity analysis")
-                        st.stop()
+                    # Calculate weight based on content length
+                    length_weight = min(1.0, text_length / 100)  # Cap at 100 words
                     
-                    # Sort sections by weighted similarity
-                    section_results.sort(key=lambda x: x['weighted_similarity'], reverse=True)
-                    
-                    # Calculate overall metrics
-                    raw_similarities = [r['raw_similarity'] for r in section_results]
-                    metrics = {
-                        'raw_avg': float(np.mean(raw_similarities)),
-                        'raw_max': float(max(raw_similarities)),
-                        'raw_min': float(min(raw_similarities)),
-                        'std_dev': float(np.std(raw_similarities)),
-                        'section_count': len(section_results)
-                    }
-                    
-                    # Display overall results
-                    st.subheader("Comparison Results")
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric(
-                            label="Average Similarity",
-                            value=f"{metrics['raw_avg']:.3f}",
-                            help="Average similarity between the keyword and all analyzed sections"
-                        )
-                    with col2:
-                        st.metric(
-                            label="Highest Similarity",
-                            value=f"{metrics['raw_max']:.3f}",
-                            help="Highest similarity score found across all sections"
-                        )
-                    with col3:
-                        st.metric(
-                            label="Std Dev",
-                            value=f"{metrics['std_dev']:.3f}",
-                            help="Standard deviation of similarity scores"
-                        )
-                    
-                    # Display top 3 most similar sections
-                    st.subheader("Most Similar Sections")
-                    for i, result in enumerate(section_results[:3], 1):
-                        st.markdown(f"""
-                        **{i}. {result['section'].get('heading', 'No heading')}**  
-                        Raw Similarity: {result['raw_similarity']:.3f}  
-                        Weighted Similarity: {result['weighted_similarity']:.3f}  
-                        Length: {result['text_length']} words
-                        """)
-                        
-                        # Show section preview
-                        st.markdown(f"**Preview:** {result['section']['text'][:200]}...")
-                    
-                    # Display all sections in a table
-                    st.subheader("All Section Similarities")
-                    df = pd.DataFrame(section_results)
-                    # Round numeric columns
-                    numeric_cols = ['raw_similarity', 'weighted_similarity']
-                    df[numeric_cols] = df[numeric_cols].round(3)
-                    
-                    # Add section heading and text preview
-                    df['heading'] = df['section'].apply(lambda x: x.get('heading', 'No heading'))
-                    df['text_preview'] = df['section'].apply(lambda x: x['text'][:200] + '...' if len(x['text']) > 200 else x['text'])
-                    
-                    # Rename columns
-                    df = df.rename(columns={
-                        'heading': 'Section',
-                        'raw_similarity': 'Raw Similarity',
-                        'weighted_similarity': 'Weighted Similarity',
-                        'text_length': 'Length',
-                        'text_preview': 'Preview'
+                    section_results.append({
+                        'section': section,
+                        'raw_similarity': similarity,
+                        'weighted_similarity': similarity * length_weight,
+                        'text_length': text_length
                     })
-                    
-                    # Reorder columns
-                    df = df[['Section', 'Raw Similarity', 'Weighted Similarity', 'Length', 'Preview']]
-                    
-                    st.dataframe(df, use_container_width=True)
-                    
-                    # Add download button for results
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="Download Section Analysis as CSV",
-                        data=csv,
-                        file_name="section_analysis.csv",
-                        mime="text/csv"
+                
+                if not section_results:
+                    st.warning("No valid sections found for similarity analysis")
+                    st.stop()
+                
+                # Sort sections by weighted similarity
+                section_results.sort(key=lambda x: x['weighted_similarity'], reverse=True)
+                
+                # Calculate overall metrics
+                raw_similarities = [r['raw_similarity'] for r in section_results]
+                metrics = {
+                    'raw_avg': float(np.mean(raw_similarities)),
+                    'raw_max': float(max(raw_similarities)),
+                    'raw_min': float(min(raw_similarities)),
+                    'std_dev': float(np.std(raw_similarities)),
+                    'section_count': len(section_results)
+                }
+                
+                # Display overall results
+                st.subheader("Comparison Results")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric(
+                        label="Average Similarity",
+                        value=f"{metrics['raw_avg']:.3f}",
+                        help="Average similarity between the " + 
+                             ("keyword" if embedding_source == "Single Keyword" else "keyword cluster") + 
+                             " and all analyzed sections"
                     )
-                except Exception as e:
-                    st.error(f"Error calculating or displaying results: {str(e)}")
-                    debug_log(f"Error type: {type(e)}")
-                    debug_log(f"Full error: {repr(e)}")
-            else:
-                st.info("Enter a keyword in the first tab to analyze similarities with webpage content.")
+                with col2:
+                    st.metric(
+                        label="Highest Similarity",
+                        value=f"{metrics['raw_max']:.3f}",
+                        help="Highest similarity score found across all sections"
+                    )
+                with col3:
+                    st.metric(
+                        label="Std Dev",
+                        value=f"{metrics['std_dev']:.3f}",
+                        help="Standard deviation of similarity scores"
+                    )
+                
+                # Display top 3 most similar sections
+                st.subheader("Most Similar Sections")
+                for i, result in enumerate(section_results[:3], 1):
+                    st.markdown(f"""
+                    **{i}. {result['section'].get('heading', 'No heading')}**  
+                    Raw Similarity: {result['raw_similarity']:.3f}  
+                    Weighted Similarity: {result['weighted_similarity']:.3f}  
+                    Length: {result['text_length']} words
+                    """)
+                    
+                    # Show section preview
+                    st.markdown(f"**Preview:** {result['section']['text'][:200]}...")
+                
+                # Display all sections in a table
+                st.subheader("All Section Similarities")
+                df = pd.DataFrame(section_results)
+                # Round numeric columns
+                numeric_cols = ['raw_similarity', 'weighted_similarity']
+                df[numeric_cols] = df[numeric_cols].round(3)
+                
+                # Add section heading and text preview
+                df['heading'] = df['section'].apply(lambda x: x.get('heading', 'No heading'))
+                df['text_preview'] = df['section'].apply(lambda x: x['text'][:200] + '...' if len(x['text']) > 200 else x['text'])
+                
+                # Rename columns
+                df = df.rename(columns={
+                    'heading': 'Section',
+                    'raw_similarity': 'Raw Similarity',
+                    'weighted_similarity': 'Weighted Similarity',
+                    'text_length': 'Length',
+                    'text_preview': 'Preview'
+                })
+                
+                # Reorder columns
+                df = df[['Section', 'Raw Similarity', 'Weighted Similarity', 'Length', 'Preview']]
+                
+                st.dataframe(df, use_container_width=True)
+                
+                # Add download button for results
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="Download Section Analysis as CSV",
+                    data=csv,
+                    file_name=f"section_analysis_{'keyword' if embedding_source == 'Single Keyword' else 'cluster'}.csv",
+                    mime="text/csv"
+                )
+            except Exception as e:
+                st.error(f"Error calculating or displaying results: {str(e)}")
+                debug_log(f"Error type: {type(e)}")
+                debug_log(f"Full error: {repr(e)}")
         else:
             st.error("Failed to scrape webpage content. Please check the URL and try again.")
+    elif url_input:
+        st.warning("Please generate an embedding first")
+    elif embedding_to_use is not None:
+        st.info("Please enter a URL to analyze")
 
-with tab3:
+with tab4:
     st.subheader("Analyze Link Profile")
     st.markdown("""
     Enter URLs (one per line) to analyze their similarity to the webpage you analyzed in the "Webpage Analysis" tab.
@@ -1934,7 +2131,7 @@ with tab3:
     else:
         st.warning("Please enter at least one URL to analyze.")
 
-with tab4:
+with tab5:
     st.subheader("Compare Multiple URLs")
     st.markdown("""
     Enter a keyword and up to 10 URLs to compare their similarity to the keyword.
@@ -2075,7 +2272,7 @@ with tab4:
                             Length: {score['length']} words  
                             Preview: {score['text_preview']}
                             """)
-                
+            
                 # Display all URLs in a table
                 st.subheader("All URL Similarities")
                 df = pd.DataFrame(url_results)
