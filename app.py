@@ -891,71 +891,95 @@ def scrape_webpage(url):
                             debug_log("\nStarting section processing...")
                             
                             # First, find all H1 elements to ensure we don't miss any
-                            all_h1s = soup.find_all('h1', class_=True)  # Find H1s with any class
-                            debug_log(f"\nFound {len(all_h1s)} H1 elements with classes:")
-                            for h1 in all_h1s:
-                                debug_log(f"H1 text: {h1.get_text().strip()[:100]}")
-                                debug_log(f"H1 classes: {h1.get('class', [])}")
-                                debug_log(f"H1 HTML: {h1.prettify()[:200]}")
+                            debug_log("\n=== STARTING H1 PROCESSING ===")
+                            all_h1s = soup.find_all('h1')  # Find ALL H1s regardless of class
+                            debug_log(f"\nFound {len(all_h1s)} total H1 elements")
                             
-                            # Also find H1s without classes
-                            h1s_without_class = soup.find_all('h1', class_=False)
-                            debug_log(f"\nFound {len(h1s_without_class)} H1 elements without classes:")
-                            for h1 in h1s_without_class:
-                                debug_log(f"H1 text: {h1.get_text().strip()[:100]}")
-                                debug_log(f"H1 HTML: {h1.prettify()[:200]}")
-                            
-                            # Combine all H1s
-                            all_h1s.extend(h1s_without_class)
-                            debug_log(f"\nTotal H1 elements found: {len(all_h1s)}")
+                            # Log details of each H1 found
+                            for i, h1 in enumerate(all_h1s, 1):
+                                debug_log(f"\nH1 #{i}:")
+                                debug_log(f"Text: {h1.get_text().strip()}")
+                                debug_log(f"Classes: {h1.get('class', [])}")
+                                debug_log(f"Parent: {h1.parent.name if h1.parent else 'None'}")
+                                debug_log(f"Next sibling: {h1.next_sibling.name if hasattr(h1.next_sibling, 'name') else 'None'}")
+                                debug_log(f"Full HTML: {h1.prettify()}")
                             
                             # Create sections list to store all sections
                             sections = []
+                            processed_h1s = set()
                             
-                            # First pass: Create H1 sections and their following content sections
+                            # Process each H1 and its following content
                             for h1 in all_h1s:
-                                if h1 not in processed_h1s:
-                                    debug_log(f"\nProcessing H1 element: {h1.get_text().strip()[:100]}")
-                                    h1_text = h1.get_text().strip()
-                                    if h1_text:
-                                        # Create H1 section (just the heading)
-                                        h1_section = {
-                                            'type': 'h1',
-                                            'heading': h1_text,
-                                            'text': h1_text,
-                                            'content': [],
-                                            'level': 1
-                                        }
-                                        sections.append(h1_section)
-                                        processed_h1s.add(h1)
-                                        debug_log(f"Created H1 section: {h1_text[:100]}")
-                                        
-                                        # Create a separate section for content between H1 and H2
-                                        content_section = {
-                                            'type': 'h1-content',
-                                            'heading': f"Content after {h1_text}",
-                                            'text': '',
-                                            'content': [],
-                                            'level': 1.5  # Between H1 and H2
-                                        }
-                                        
-                                        # Get content until next H2
-                                        current = h1.next_sibling
-                                        content_found = False
-                                        while current and not (hasattr(current, 'name') and current.name == 'h2'):
-                                            if hasattr(current, 'name'):
-                                                text = current.get_text().strip()
-                                                if text:
-                                                    content_section['content'].append(text)
-                                                    content_found = True
-                                                    debug_log(f"Added content after H1: {text[:100]}")
-                                            current = current.next_sibling
-                                        
-                                        # Only add the content section if we found content
-                                        if content_found:
-                                            content_section['text'] = ' '.join(content_section['content'])
-                                            sections.append(content_section)
-                                            debug_log(f"Created content section after H1 with {len(content_section['content'])} items")
+                                if h1 in processed_h1s:
+                                    debug_log(f"\nSkipping already processed H1: {h1.get_text().strip()}")
+                                    continue
+                                
+                                h1_text = h1.get_text().strip()
+                                debug_log(f"\n=== PROCESSING H1: {h1_text} ===")
+                                
+                                # Create H1 section (just the heading)
+                                h1_section = {
+                                    'type': 'h1',
+                                    'heading': h1_text,
+                                    'text': h1_text,
+                                    'content': [],
+                                    'level': 1
+                                }
+                                sections.append(h1_section)
+                                processed_h1s.add(h1)
+                                debug_log(f"Created H1 section: {h1_text}")
+                                
+                                # Create content section for text between H1 and H2
+                                content_section = {
+                                    'type': 'h1-content',
+                                    'heading': f"Content after {h1_text}",
+                                    'text': '',
+                                    'content': [],
+                                    'level': 1.5
+                                }
+                                
+                                # Get content until next H2
+                                current = h1.next_sibling
+                                content_found = False
+                                debug_log("\nLooking for content between H1 and next H2:")
+                                
+                                while current:
+                                    # Check if we've hit another H2
+                                    if hasattr(current, 'name') and current.name == 'h2':
+                                        debug_log("Found H2, stopping content collection")
+                                        break
+                                    
+                                    # Check if we've hit another H1
+                                    if hasattr(current, 'name') and current.name == 'h1':
+                                        debug_log("Found another H1, stopping content collection")
+                                        break
+                                    
+                                    # Process content
+                                    if hasattr(current, 'name'):
+                                        text = current.get_text().strip()
+                                        if text:
+                                            debug_log(f"Found content: {text[:100]}")
+                                            content_section['content'].append(text)
+                                            content_found = True
+                                    
+                                    current = current.next_sibling
+                                
+                                # Add content section if we found any content
+                                if content_found:
+                                    content_section['text'] = ' '.join(content_section['content'])
+                                    sections.append(content_section)
+                                    debug_log(f"Created content section with {len(content_section['content'])} items")
+                                    debug_log(f"Content section text: {content_section['text'][:200]}")
+                                else:
+                                    debug_log("No content found between H1 and next H2")
+                            
+                            debug_log("\n=== FINAL SECTIONS ===")
+                            for i, section in enumerate(sections, 1):
+                                debug_log(f"\nSection {i}:")
+                                debug_log(f"Type: {section['type']}")
+                                debug_log(f"Heading: {section['heading']}")
+                                debug_log(f"Content items: {len(section['content'])}")
+                                debug_log(f"Text preview: {section['text'][:200]}")
                             
                             # Second pass: Process remaining elements (H2 and below)
                             for element in soup.find_all(['div', 'section', 'article', 'p', 'h2', 'h3', 'h4', 'h5', 'h6']):
