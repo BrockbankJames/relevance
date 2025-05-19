@@ -834,7 +834,7 @@ def scrape_webpage(url):
         debug_log(f"\nScraping URL: {url}")
         debug_log(f"Encoded URL: {encoded_url}")
         
-        # Make the request to ScrapingBee API with enhanced parameters
+        # Make the request to ScrapingBee API with simpler parameters
         params = {
             'api_key': api_key,
             'url': encoded_url,
@@ -842,83 +842,23 @@ def scrape_webpage(url):
             'premium_proxy': 'true',  # Use premium proxies
             'wait': '5000',  # Wait 5 seconds for JavaScript
             'wait_for': 'body',  # Wait for body element
-            'block_resources': 'true',  # Block unnecessary resources
+            'block_resources': 'false',  # Don't block resources to avoid 500 errors
             'extract_rules': json.dumps({
-                # Target main content area, explicitly excluding header, footer, nav, etc.
+                # Get all content first, we'll filter it later
                 'main_content': {
-                    'selector': '''
-                        article:not(header *):not(footer *):not(nav *),
-                        .article-content:not(header *):not(footer *):not(nav *),
-                        .article-body:not(header *):not(footer *):not(nav *),
-                        .post-content:not(header *):not(footer *):not(nav *),
-                        .entry-content:not(header *):not(footer *):not(nav *),
-                        main article:not(header *):not(footer *):not(nav *),
-                        [role="main"] article:not(header *):not(footer *):not(nav *),
-                        .main-content article:not(header *):not(footer *):not(nav *),
-                        #content article:not(header *):not(footer *):not(nav *),
-                        .article:not(header *):not(footer *):not(nav *),
-                        .content:not(header *):not(footer *):not(nav *),
-                        .post:not(header *):not(footer *):not(nav *),
-                        .entry:not(header *):not(footer *):not(nav *),
-                        main:not(header *):not(footer *):not(nav *),
-                        [role="main"]:not(header *):not(footer *):not(nav *),
-                        .main-content:not(header *):not(footer *):not(nav *),
-                        #content:not(header *):not(footer *):not(nav *)
-                    ''',
+                    'selector': 'body',
                     'type': 'list',
                     'output': 'html'
                 },
-                # Extract headings from main content only, explicitly excluding header/footer
+                # Get all headings
                 'headings': {
-                    'selector': '''
-                        article:not(header *):not(footer *):not(nav *) h1,
-                        article:not(header *):not(footer *):not(nav *) h2,
-                        article:not(header *):not(footer *):not(nav *) h3,
-                        .article-content:not(header *):not(footer *):not(nav *) h1,
-                        .article-content:not(header *):not(footer *):not(nav *) h2,
-                        .article-content:not(header *):not(footer *):not(nav *) h3,
-                        .article-body:not(header *):not(footer *):not(nav *) h1,
-                        .article-body:not(header *):not(footer *):not(nav *) h2,
-                        .article-body:not(header *):not(footer *):not(nav *) h3,
-                        .post-content:not(header *):not(footer *):not(nav *) h1,
-                        .post-content:not(header *):not(footer *):not(nav *) h2,
-                        .post-content:not(header *):not(footer *):not(nav *) h3,
-                        .entry-content:not(header *):not(footer *):not(nav *) h1,
-                        .entry-content:not(header *):not(footer *):not(nav *) h2,
-                        .entry-content:not(header *):not(footer *):not(nav *) h3,
-                        main article:not(header *):not(footer *):not(nav *) h1,
-                        main article:not(header *):not(footer *):not(nav *) h2,
-                        main article:not(header *):not(footer *):not(nav *) h3,
-                        [role="main"] article:not(header *):not(footer *):not(nav *) h1,
-                        [role="main"] article:not(header *):not(footer *):not(nav *) h2,
-                        [role="main"] article:not(header *):not(footer *):not(nav *) h3,
-                        .main-content article:not(header *):not(footer *):not(nav *) h1,
-                        .main-content article:not(header *):not(footer *):not(nav *) h2,
-                        .main-content article:not(header *):not(footer *):not(nav *) h3,
-                        #content article:not(header *):not(footer *):not(nav *) h1,
-                        #content article:not(header *):not(footer *):not(nav *) h2,
-                        #content article:not(header *):not(footer *):not(nav *) h3,
-                        .article:not(header *):not(footer *):not(nav *) h1,
-                        .article:not(header *):not(footer *):not(nav *) h2,
-                        .article:not(header *):not(footer *):not(nav *) h3
-                    ''',
+                    'selector': 'h1, h2, h3',
                     'type': 'list',
                     'output': 'text'
                 },
-                # Extract paragraphs from main content only, explicitly excluding header/footer
+                # Get all paragraphs
                 'paragraphs': {
-                    'selector': '''
-                        article:not(header *):not(footer *):not(nav *) p,
-                        .article-content:not(header *):not(footer *):not(nav *) p,
-                        .article-body:not(header *):not(footer *):not(nav *) p,
-                        .post-content:not(header *):not(footer *):not(nav *) p,
-                        .entry-content:not(header *):not(footer *):not(nav *) p,
-                        main article:not(header *):not(footer *):not(nav *) p,
-                        [role="main"] article:not(header *):not(footer *):not(nav *) p,
-                        .main-content article:not(header *):not(footer *):not(nav *) p,
-                        #content article:not(header *):not(footer *):not(nav *) p,
-                        .article:not(header *):not(footer *):not(nav *) p
-                    ''',
+                    'selector': 'p',
                     'type': 'list',
                     'output': 'text'
                 }
@@ -954,19 +894,65 @@ def scrape_webpage(url):
                 data = json.loads(response.text)
                 debug_log(f"JSON keys found: {list(data.keys())}")
                 
-                # Debug the content we received
-                if 'main_content' in data:
-                    debug_log("\nMain content items received:")
-                    for i, content in enumerate(data['main_content']):
-                        if content:
-                            soup = BeautifulSoup(content, 'html.parser')
-                            debug_log(f"\nContent {i+1}:")
-                            debug_log(f"Contains header: {bool(soup.find('header'))}")
-                            debug_log(f"Contains footer: {bool(soup.find('footer'))}")
-                            debug_log(f"Contains nav: {bool(soup.find('nav'))}")
-                            debug_log(f"First 200 chars: {content[:200]}")
+                # Process the HTML content to remove header/footer before extracting sections
+                if 'main_content' in data and data['main_content']:
+                    debug_log("\nProcessing main content HTML...")
+                    processed_content = []
+                    
+                    for i, content_html in enumerate(data['main_content']):
+                        if not content_html:
+                            continue
+                            
+                        debug_log(f"\nProcessing content block {i+1}:")
+                        debug_log(f"Content length: {len(content_html)} characters")
+                        
+                        try:
+                            soup = BeautifulSoup(content_html, 'html.parser')
+                            
+                            # Remove header, footer, nav, and their children
+                            for tag in soup.find_all(['header', 'footer', 'nav']):
+                                debug_log(f"Removing {tag.name} element and its children")
+                                tag.decompose()
+                            
+                            # Remove elements with common non-content classes
+                            non_content_classes = [
+                                'header', 'footer', 'nav', 'menu', 'sidebar', 'widget', 'advertisement',
+                                'banner', 'promo', 'cookie-notice', 'popup', 'modal', 'overlay',
+                                'newsletter', 'subscription', 'social-share', 'related-posts',
+                                'comments', 'recommendations', 'trending', 'popular', 'featured',
+                                'latest', 'recent', 'preview', 'list-item', 'card', 'teaser',
+                                'summary', 'excerpt', 'snippet', 'thumbnail', 'image', 'video',
+                                'gallery', 'carousel', 'slider', 'tabs', 'accordion', 'dropdown',
+                                'tooltip', 'notification', 'alert', 'message', 'status', 'progress',
+                                'loading', 'spinner', 'icon', 'button', 'link', 'badge', 'label',
+                                'tag', 'category', 'meta', 'author', 'date', 'time', 'location',
+                                'price', 'rating', 'review', 'comment', 'share', 'like', 'follow',
+                                'subscribe', 'search', 'filter', 'sort', 'pagination', 'breadcrumb',
+                                'sitemap'
+                            ]
+                            
+                            # Remove elements with non-content classes
+                            for tag in soup.find_all(class_=lambda x: x and any(cls in str(x).lower() for cls in non_content_classes)):
+                                debug_log(f"Removing element with non-content class: {tag.get('class', [])}")
+                                tag.decompose()
+                            
+                            # Get the cleaned HTML
+                            cleaned_html = str(soup)
+                            if cleaned_html.strip():
+                                processed_content.append(cleaned_html)
+                                debug_log(f"Added processed content block {i+1}, length: {len(cleaned_html)}")
+                            
+                        except Exception as e:
+                            debug_log(f"Error processing content block {i+1}: {str(e)}")
+                            continue
+                    
+                    # Update the data with processed content
+                    data['main_content'] = processed_content
+                    debug_log(f"\nProcessed {len(processed_content)} content blocks")
                 
-                sections = extract_sections_from_json(response.text)
+                # Now extract sections from the cleaned content
+                sections = extract_sections_from_json(json.dumps(data))
+                
             except json.JSONDecodeError as e:
                 debug_log(f"Error decoding JSON: {str(e)}")
                 debug_log("Raw response content:")
