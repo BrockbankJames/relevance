@@ -527,7 +527,6 @@ def extract_sections_from_json(json_data):
                     
                 debug_log(f"\nProcessing content_html {i+1}:")
                 debug_log(f"Content length: {len(content_html)} characters")
-                debug_log(f"First 200 characters: {content_html[:200]}")
                 
                 try:
                     soup = BeautifulSoup(content_html, 'html.parser')
@@ -535,7 +534,7 @@ def extract_sections_from_json(json_data):
                     # First, remove all header, footer, nav, and other non-content elements
                     # This is done before any content extraction to ensure we only process main content
                     for tag in soup.find_all(['header', 'footer', 'nav', 'aside']):
-                        debug_log(f"Removing {tag.name} element")
+                        debug_log(f"Removing {tag.name} element and its children")
                         tag.decompose()
                     
                     # Also remove any elements that are children of header/footer/nav
@@ -581,7 +580,13 @@ def extract_sections_from_json(json_data):
                             debug_log(f"Skipping heading in non-content element: {tag.get_text().strip()[:100]}")
                             continue
                             
+                        # Skip if the heading's text suggests it's from header/footer
                         heading_text = tag.get_text().strip()
+                        if any(non_content in heading_text.lower() for non_content in 
+                              ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use']):
+                            debug_log(f"Skipping non-content heading: {heading_text[:100]}")
+                            continue
+                            
                         if heading_text:
                             level = int(tag.name[1])  # h1 -> 1, h2 -> 2, etc.
                             headings.append({
@@ -605,7 +610,13 @@ def extract_sections_from_json(json_data):
                             debug_log(f"Skipping paragraph in non-content element: {p.get_text().strip()[:100]}")
                             continue
                             
+                        # Skip if the paragraph's text suggests it's from header/footer
                         paragraph_text = p.get_text().strip()
+                        if any(non_content in paragraph_text.lower() for non_content in 
+                              ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use']):
+                            debug_log(f"Skipping non-content paragraph: {paragraph_text[:100]}")
+                            continue
+                            
                         if paragraph_text:
                             paragraphs.append({
                                 'text': paragraph_text,
@@ -627,7 +638,8 @@ def extract_sections_from_json(json_data):
             for heading in data['headings']:
                 if heading and isinstance(heading, str):
                     # Skip headings that look like they're from header/footer
-                    if any(non_content in heading.lower() for non_content in ['menu', 'navigation', 'header', 'footer', 'copyright']):
+                    if any(non_content in heading.lower() for non_content in 
+                          ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use']):
                         debug_log(f"Skipping non-content heading: {heading[:100]}")
                         continue
                     headings.append({
@@ -644,7 +656,8 @@ def extract_sections_from_json(json_data):
             for paragraph in data['paragraphs']:
                 if paragraph and isinstance(paragraph, str):
                     # Skip paragraphs that look like they're from header/footer
-                    if any(non_content in paragraph.lower() for non_content in ['menu', 'navigation', 'header', 'footer', 'copyright']):
+                    if any(non_content in paragraph.lower() for non_content in 
+                          ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use']):
                         debug_log(f"Skipping non-content paragraph: {paragraph[:100]}")
                         continue
                     paragraphs.append({
@@ -670,6 +683,12 @@ def extract_sections_from_json(json_data):
                 if item.get('parent_class') and any(cls in str(item['parent_class']).lower() 
                                                   for cls in ['nav', 'menu', 'preview', 'list-item']):
                     debug_log(f"Skipping navigation/preview heading: {item['text'][:100]}")
+                    continue
+                    
+                # Skip headings that look like they're from header/footer
+                if any(non_content in item['text'].lower() for non_content in 
+                      ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use']):
+                    debug_log(f"Skipping non-content heading: {item['text'][:100]}")
                     continue
                     
                 if item['html_tag'] == 'h1':
@@ -739,6 +758,12 @@ def extract_sections_from_json(json_data):
                         debug_log(f"Skipping navigation/preview H3: {item['text'][:100]}")
                         continue
                         
+                    # Skip H3s that look like they're from header/footer
+                    if any(non_content in item['text'].lower() for non_content in 
+                          ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use']):
+                        debug_log(f"Skipping non-content H3: {item['text'][:100]}")
+                        continue
+                        
                     # If we have a current H3 section, save it
                     if current_h3_section:
                         current_h3_section['text'] = f"{current_h3_section['heading']} {' '.join(current_h3_content)}"
@@ -759,6 +784,12 @@ def extract_sections_from_json(json_data):
                 if item.get('parent_class') and any(cls in str(item['parent_class']).lower() 
                                                   for cls in ['nav', 'menu', 'preview', 'list-item']):
                     debug_log(f"Skipping navigation/preview paragraph: {item['text'][:100]}")
+                    continue
+                    
+                # Skip paragraphs that look like they're from header/footer
+                if any(non_content in item['text'].lower() for non_content in 
+                      ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use']):
+                    debug_log(f"Skipping non-content paragraph: {item['text'][:100]}")
                     continue
                     
                 if current_h3_section:
