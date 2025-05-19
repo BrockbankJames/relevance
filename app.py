@@ -16,6 +16,13 @@ st.set_page_config(
     layout="centered"
 )
 
+# Add title and description
+st.title("Google Vertex AI Embedding Generator")
+st.markdown("""
+This app generates vector embeddings for text and webpages using Google's Vertex AI text-embedding-005 model.
+You can either enter a keyword or a webpage URL to analyze content similarity.
+""")
+
 # Add debug mode
 DEBUG = True
 
@@ -35,13 +42,6 @@ def debug_log(message):
     if DEBUG:
         st.write(f"Debug: {message}")
 
-# Add title and description
-st.title("Google Vertex AI Embedding Generator")
-st.markdown("""
-This app generates vector embeddings for text and webpages using Google's Vertex AI text-embedding-005 model.
-You can either enter a keyword or a webpage URL to analyze content similarity.
-""")
-
 # Initialize Vertex AI
 @st.cache_resource
 def init_vertex_ai():
@@ -50,13 +50,21 @@ def init_vertex_ai():
         
         # Get project and location from secrets
         project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
-        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'europe-west1')
+        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'us-central1')  # Changed to us-central1 as it's the most reliable
         debug_log(f"Using project: {project_id}, location: {location}")
+        
+        if not project_id:
+            st.error("GOOGLE_CLOUD_PROJECT not found in secrets")
+            return False
         
         # Initialize Vertex AI
         debug_log("Initializing Vertex AI...")
         try:
-            vertexai.init(project=project_id, location=location)
+            vertexai.init(
+                project=project_id,
+                location=location,
+                credentials=json.loads(st.secrets['GOOGLE_APPLICATION_CREDENTIALS_JSON'])
+            )
             debug_log("Vertex AI initialization complete!")
             return True
         except Exception as e:
@@ -71,7 +79,7 @@ def init_vertex_ai():
         Please make sure you have set up the following in your Streamlit secrets:
         1. GOOGLE_APPLICATION_CREDENTIALS_JSON: Your service account key JSON
         2. GOOGLE_CLOUD_PROJECT: Your Google Cloud project ID
-        3. GOOGLE_CLOUD_LOCATION: Your preferred location (default: europe-west1)
+        3. GOOGLE_CLOUD_LOCATION: Your preferred location (default: us-central1)
         
         Current secrets status:
         - GOOGLE_APPLICATION_CREDENTIALS_JSON: {'present': 'GOOGLE_APPLICATION_CREDENTIALS_JSON' in st.secrets}
