@@ -1,7 +1,7 @@
 import streamlit as st
 import numpy as np
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
 from sklearn.metrics.pairwise import cosine_similarity
 import urllib.parse
 import json
