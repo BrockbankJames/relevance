@@ -6,8 +6,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 import urllib.parse
 import json
 import pandas as pd
-import vertexai
-from vertexai.language_models import TextEmbeddingModel
+import google.auth
+from google.auth.transport.requests import Request
+from google.oauth2 import service_account
 
 # Set page config
 st.set_page_config(
@@ -42,60 +43,25 @@ def debug_log(message):
     if DEBUG:
         st.write(f"Debug: {message}")
 
-# Initialize Vertex AI
-@st.cache_resource
-def init_vertex_ai():
+def get_vertex_ai_token():
+    """Get authentication token for Vertex AI API"""
     try:
-        debug_log("Starting Vertex AI initialization...")
-        
-        # Get project and location from secrets
-        project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
-        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'us-central1')  # Changed to us-central1 as it's the most reliable
-        debug_log(f"Using project: {project_id}, location: {location}")
-        
-        if not project_id:
-            st.error("GOOGLE_CLOUD_PROJECT not found in secrets")
-            return False
-        
-        # Initialize Vertex AI
-        debug_log("Initializing Vertex AI...")
-        try:
-            vertexai.init(
-                project=project_id,
-                location=location,
-                credentials=json.loads(st.secrets['GOOGLE_APPLICATION_CREDENTIALS_JSON'])
-            )
-            debug_log("Vertex AI initialization complete!")
-            return True
-        except Exception as e:
-            st.error(f"Error during Vertex AI initialization: {str(e)}")
-            debug_log(f"Initialization error details: {str(e)}")
-            return False
-            
+        debug_log("Getting authentication token...")
+        credentials = service_account.Credentials.from_service_account_info(
+            json.loads(st.secrets['GOOGLE_APPLICATION_CREDENTIALS_JSON']),
+            scopes=['https://www.googleapis.com/auth/cloud-platform']
+        )
+        credentials.refresh(Request())
+        token = credentials.token
+        debug_log("Successfully obtained authentication token")
+        return token
     except Exception as e:
-        st.error(f"Error in init_vertex_ai: {str(e)}")
-        debug_log(f"Full error details: {str(e)}")
-        st.info("""
-        Please make sure you have set up the following in your Streamlit secrets:
-        1. GOOGLE_APPLICATION_CREDENTIALS_JSON: Your service account key JSON
-        2. GOOGLE_CLOUD_PROJECT: Your Google Cloud project ID
-        3. GOOGLE_CLOUD_LOCATION: Your preferred location (default: us-central1)
-        
-        Current secrets status:
-        - GOOGLE_APPLICATION_CREDENTIALS_JSON: {'present': 'GOOGLE_APPLICATION_CREDENTIALS_JSON' in st.secrets}
-        - GOOGLE_CLOUD_PROJECT: {'present': 'GOOGLE_CLOUD_PROJECT' in st.secrets}
-        - GOOGLE_CLOUD_LOCATION: {'present': 'GOOGLE_CLOUD_LOCATION' in st.secrets}
-        """)
-        return False
-
-# Initialize Vertex AI
-with st.spinner("Initializing Vertex AI..."):
-    if not init_vertex_ai():
-        st.error("Failed to initialize Vertex AI. Please check the error messages above.")
-        st.stop()
+        st.error(f"Error getting authentication token: {str(e)}")
+        debug_log(f"Token error details: {str(e)}")
+        return None
 
 def get_embedding(text):
-    """Generate embedding using Vertex AI text-embedding-005 model"""
+    """Generate embedding using Vertex AI text-embedding-005 model via REST API"""
     if not text or not isinstance(text, str):
         st.error("Invalid input: text must be a non-empty string")
         debug_log(f"Invalid input type: {type(text)}")
@@ -110,92 +76,64 @@ def get_embedding(text):
     try:
         debug_log("Starting embedding generation...")
         debug_log(f"Input text length: {len(text)} characters")
-        debug_log(f"Input text: {text[:100]}...")  # Log first 100 chars of input
         
-        # Initialize the model
-        debug_log("About to initialize TextEmbeddingModel...")
-        try:
-            debug_log("Calling TextEmbeddingModel.from_pretrained...")
-            model = TextEmbeddingModel.from_pretrained("text-embedding-005")
-            debug_log("Model initialized successfully")
-            debug_log(f"Model type: {type(model)}")
-        except Exception as e:
-            st.error(f"Error initializing model: {str(e)}")
-            debug_log(f"Model initialization error details: {str(e)}")
-            debug_log(f"Error type: {type(e)}")
-            debug_log(f"Error args: {e.args}")
-            debug_log(f"Full error: {repr(e)}")
-            return None
+        # Get project and location from secrets
+        project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
+        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'us-central1')
         
-        # Get embeddings
-        debug_log("About to call get_embeddings...")
-        try:
-            debug_log("Preparing text for embedding...")
-            texts_to_embed = [text]
-            debug_log(f"Number of texts to embed: {len(texts_to_embed)}")
-            
-            debug_log("Calling model.get_embeddings...")
-            embeddings = model.get_embeddings(texts_to_embed)
-            debug_log("get_embeddings call completed")
-            debug_log(f"Embeddings type: {type(embeddings)}")
-            
-            if not embeddings:
-                st.error("No embeddings were returned from the model")
-                debug_log("Empty embeddings response")
-                return None
-                
-            if not isinstance(embeddings, list):
-                st.error(f"Unexpected embeddings type: {type(embeddings)}")
-                debug_log(f"Expected list, got {type(embeddings)}")
-                return None
-                
-            if len(embeddings) == 0:
-                st.error("Empty embeddings list returned")
-                debug_log("Empty embeddings list")
-                return None
-                
-            debug_log("Processing embeddings response...")
-            debug_log(f"Number of embeddings returned: {len(embeddings)}")
-            
-            # Extract the embedding from the response
-            debug_log("Extracting embedding values...")
-            if not hasattr(embeddings[0], 'values'):
-                st.error("Embedding response does not contain expected 'values' attribute")
-                debug_log(f"Embedding object attributes: {dir(embeddings[0])}")
-                return None
-                
-            try:
-                embedding = np.array(embeddings[0].values)
-                debug_log(f"Successfully created numpy array, shape: {embedding.shape}")
-            except Exception as e:
-                st.error(f"Error converting embedding to numpy array: {str(e)}")
-                debug_log(f"Error converting to numpy: {str(e)}")
-                debug_log(f"Values type: {type(embeddings[0].values)}")
-                return None
-                
-            if embedding is None or embedding.size == 0:
-                st.error("Failed to convert embedding to numpy array")
-                debug_log("Empty or None numpy array")
-                return None
-                
-            debug_log(f"Embedding shape: {embedding.shape}")
-            debug_log(f"Embedding type: {embedding.dtype}")
-            debug_log("Embedding generation complete!")
-            return embedding
-        except Exception as e:
-            st.error(f"Error getting embeddings: {str(e)}")
-            debug_log(f"Embedding generation error details: {str(e)}")
-            debug_log(f"Error type: {type(e)}")
-            debug_log(f"Error args: {e.args}")
-            debug_log(f"Full error: {repr(e)}")
+        if not project_id:
+            st.error("GOOGLE_CLOUD_PROJECT not found in secrets")
             return None
             
+        # Get authentication token
+        token = get_vertex_ai_token()
+        if not token:
+            return None
+            
+        # Prepare the API request
+        endpoint = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/publishers/google/models/textembedding-gecko:predict"
+        
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "instances": [
+                {"content": text}
+            ]
+        }
+        
+        debug_log(f"Making request to: {endpoint}")
+        
+        # Make the API request
+        response = requests.post(endpoint, headers=headers, json=data)
+        
+        if response.status_code != 200:
+            st.error(f"Error from Vertex AI API: {response.status_code}")
+            debug_log(f"API Response: {response.text}")
+            return None
+            
+        # Parse the response
+        result = response.json()
+        debug_log("Successfully received API response")
+        
+        if 'predictions' not in result or not result['predictions']:
+            st.error("No predictions in API response")
+            debug_log(f"API Response: {result}")
+            return None
+            
+        # Extract the embedding
+        embedding = np.array(result['predictions'][0]['embeddings']['values'])
+        debug_log(f"Successfully extracted embedding, shape: {embedding.shape}")
+        
+        return embedding
+        
     except Exception as e:
         st.error(f"Error in get_embedding: {str(e)}")
         debug_log(f"Full error details: {str(e)}")
         debug_log(f"Error type: {type(e)}")
         debug_log(f"Error args: {e.args}")
-        debug_log(f"Full error: {repr(e)}")
         return None
 
 def scrape_webpage(url):
