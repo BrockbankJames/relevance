@@ -1113,8 +1113,93 @@ def scrape_webpage(url):
         return None
 
 def calculate_similarity(embedding1, embedding2):
-    """Calculate cosine similarity between two embeddings"""
-    return cosine_similarity([embedding1], [embedding2])[0][0]
+    """Calculate cosine similarity between two embeddings with additional validation"""
+    try:
+        # Ensure embeddings are numpy arrays
+        if not isinstance(embedding1, np.ndarray):
+            embedding1 = np.array(embedding1, dtype=np.float32)
+        if not isinstance(embedding2, np.ndarray):
+            embedding2 = np.array(embedding2, dtype=np.float32)
+            
+        # Normalize embeddings
+        embedding1 = embedding1 / np.linalg.norm(embedding1)
+        embedding2 = embedding2 / np.linalg.norm(embedding2)
+        
+        # Calculate cosine similarity
+        similarity = np.dot(embedding1, embedding2)
+        
+        # Add validation to ensure similarity is in expected range
+        if not -1.0 <= similarity <= 1.0:
+            debug_log(f"Warning: Similarity score {similarity} outside expected range [-1, 1]")
+            similarity = np.clip(similarity, -1.0, 1.0)
+            
+        return float(similarity)
+    except Exception as e:
+        debug_log(f"Error in calculate_similarity: {str(e)}")
+        return 0.0
+
+def calculate_weighted_similarity(sections, keyword_embedding):
+    """Calculate weighted similarity score for a set of sections"""
+    if not sections or not keyword_embedding:
+        return 0.0, [], {}
+        
+    try:
+        # Calculate raw similarities
+        section_similarities = []
+        for section in sections:
+            similarity = calculate_similarity(keyword_embedding, section['embedding'])
+            section_similarities.append({
+                'section': section,
+                'similarity': similarity,
+                'text_length': len(section['text'].split())
+            })
+        
+        # Sort sections by similarity
+        section_similarities.sort(key=lambda x: x['similarity'], reverse=True)
+        
+        # Calculate weights based on similarity and content length
+        total_weight = 0
+        weighted_sum = 0
+        detailed_scores = []
+        
+        for i, item in enumerate(section_similarities):
+            # Higher weight for more similar sections
+            similarity_weight = 1.0 / (i + 1)  # 1.0, 0.5, 0.33, 0.25, etc.
+            
+            # Weight based on content length (normalized)
+            length_weight = min(1.0, item['text_length'] / 100)  # Cap at 100 words
+            
+            # Combined weight
+            weight = similarity_weight * length_weight
+            total_weight += weight
+            weighted_sum += item['similarity'] * weight
+            
+            detailed_scores.append({
+                'heading': item['section'].get('heading', 'No heading'),
+                'similarity': item['similarity'],
+                'weight': weight,
+                'length': item['text_length'],
+                'text_preview': item['section']['text'][:200] + '...' if len(item['section']['text']) > 200 else item['section']['text']
+            })
+        
+        # Calculate weighted average
+        weighted_avg = weighted_sum / total_weight if total_weight > 0 else 0.0
+        
+        # Calculate additional metrics
+        metrics = {
+            'raw_avg': np.mean([s['similarity'] for s in section_similarities]),
+            'raw_max': max(s['similarity'] for s in section_similarities),
+            'raw_min': min(s['similarity'] for s in section_similarities),
+            'std_dev': np.std([s['similarity'] for s in section_similarities]),
+            'section_count': len(sections),
+            'weighted_avg': weighted_avg
+        }
+        
+        return weighted_avg, detailed_scores, metrics
+        
+    except Exception as e:
+        debug_log(f"Error in calculate_weighted_similarity: {str(e)}")
+        return 0.0, [], {}
 
 # Create tabs for different input methods
 tab1, tab2, tab3 = st.tabs(["Keyword Embedding", "Webpage Analysis", "Link Profile Analysis"])
@@ -1231,47 +1316,99 @@ with tab2:
                 st.subheader("Similarity Analysis")
                 
                 try:
-                    # Calculate similarity for each section
-                    section_similarities = []
-                    for section in sections_with_embeddings:
-                        similarity = calculate_similarity(keyword_embedding, section['embedding'])
-                        section_similarities.append({
-                            'heading': section.get('heading', 'No heading'),
-                            'type': section['type'],
-                            'similarity': similarity,
-                            'text_preview': section['text'][:200] + '...' if len(section['text']) > 200 else section['text']
-                        })
-                    
-                    # Sort sections by similarity
-                    section_similarities.sort(key=lambda x: x['similarity'], reverse=True)
-                    
-                    # Display overall similarity
-                    avg_similarity = np.mean([s['similarity'] for s in section_similarities])
-                    st.metric(
-                        label="Average Page Similarity Score",
-                        value=f"{avg_similarity:.3f}",
-                        help="Average cosine similarity between the keyword and all webpage sections (range: -1 to 1)"
+                    # Calculate weighted similarity across all sections
+                    weighted_similarity, detailed_scores, metrics = calculate_weighted_similarity(
+                        sections_with_embeddings, 
+                        keyword_embedding
                     )
                     
-                    # Display most similar sections
+                    url_results = []
+                    
+                    # Process each URL
+                    with st.spinner(f"Analyzing {len(sections_with_embeddings)} sections..."):
+                        for section in sections_with_embeddings:
+                            url_results.append({
+                                'section': section,
+                                'weighted_similarity': weighted_similarity,
+                                'raw_avg_similarity': metrics['raw_avg'],
+                                'raw_max_similarity': metrics['raw_max'],
+                                'raw_min_similarity': metrics['raw_min'],
+                                'similarity_std_dev': metrics['std_dev'],
+                                'text_length': len(section['text'].split())
+                            })
+                    
+                    # Sort sections by similarity
+                    url_results.sort(key=lambda x: x['weighted_similarity'], reverse=True)
+                    
+                    # Display overall results
+                    st.subheader("Comparison Results")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric(
+                            label="Average Weighted Similarity",
+                            value=f"{np.mean([r['weighted_similarity'] for r in url_results]):.3f}",
+                            help="Weighted average similarity between the keyword and all analyzed sections"
+                        )
+                    with col2:
+                        st.metric(
+                            label="Highest Similarity",
+                            value=f"{np.max([r['raw_max_similarity'] for r in url_results]):.3f}",
+                            help="Highest similarity score found across all sections"
+                        )
+                    with col3:
+                        st.metric(
+                            label="Average Std Dev",
+                            value=f"{np.mean([r['similarity_std_dev'] for r in url_results]):.3f}",
+                            help="Average standard deviation of similarity scores"
+                        )
+                    
+                    # Display top 3 most similar sections
                     st.subheader("Most Similar Sections")
-                    for i, section in enumerate(section_similarities[:3], 1):
+                    for i, result in enumerate(url_results[:3], 1):
                         st.markdown(f"""
-                        **{i}. {section['heading']}** ({section['type']})  
-                        Similarity: {section['similarity']:.3f}  
-                        Preview: {section['text_preview']}
+                        **{i}. {result['section']['heading']}**  
+                        Weighted Similarity: {result['weighted_similarity']:.3f}  
+                        Raw Average: {result['raw_avg_similarity']:.3f}  
+                        Raw Max: {result['raw_max_similarity']:.3f}  
+                        Raw Min: {result['raw_min_similarity']:.3f}  
+                        Std Dev: {result['similarity_std_dev']:.3f}  
+                        Length: {result['text_length']} words
                         """)
+                        
+                        # Show detailed scores for top sections
+                        if result['detailed_scores']:
+                            st.markdown("**Top 3 Most Similar Sections:**")
+                            for j, score in enumerate(result['detailed_scores'][:3], 1):
+                                st.markdown(f"""
+                                {j}. {score['heading']}  
+                                Similarity: {score['similarity']:.3f}  
+                                Weight: {score['weight']:.3f}  
+                                Length: {score['length']} words
+                                """)
                     
                     # Display all sections in a table
                     st.subheader("All Section Similarities")
-                    df = pd.DataFrame(section_similarities)
-                    df['similarity'] = df['similarity'].round(3)
+                    df = pd.DataFrame(url_results)
+                    # Round numeric columns
+                    numeric_cols = ['weighted_similarity', 'raw_avg_similarity', 'raw_max_similarity', 
+                                  'raw_min_similarity', 'similarity_std_dev']
+                    df[numeric_cols] = df[numeric_cols].round(3)
+                    
+                    # Rename columns
                     df = df.rename(columns={
-                        'heading': 'Section Heading',
-                        'type': 'Section Type',
-                        'similarity': 'Similarity Score',
-                        'text_preview': 'Content Preview'
+                        'section': 'Section',
+                        'weighted_similarity': 'Weighted Similarity',
+                        'raw_avg_similarity': 'Raw Average',
+                        'raw_max_similarity': 'Raw Maximum',
+                        'raw_min_similarity': 'Raw Minimum',
+                        'similarity_std_dev': 'Std Deviation',
+                        'text_length': 'Length'
                     })
+                    
+                    # Reorder columns
+                    df = df[['Section', 'Weighted Similarity', 'Raw Average', 'Raw Maximum', 
+                            'Raw Minimum', 'Std Deviation', 'Length']]
+                    
                     st.dataframe(df, use_container_width=True)
                     
                     # Add download button for results
@@ -1282,10 +1419,8 @@ with tab2:
                         file_name="section_analysis.csv",
                         mime="text/csv"
                     )
-                    
                 except Exception as e:
-                    st.error(f"Error calculating similarity: {str(e)}")
-                    debug_log(f"Error details: {str(e)}")
+                    st.error(f"Error calculating or displaying results: {str(e)}")
             else:
                 st.info("Enter a keyword in the first tab to analyze similarities with webpage content.")
         else:
@@ -1365,25 +1500,23 @@ with tab3:
                             section_embeddings_url = embeddings if isinstance(embeddings, list) else [embeddings]
                             
                             try:
-                                # Average section embeddings
-                                avg_section_embedding = np.mean(section_embeddings_url, axis=0)
-                                if avg_section_embedding is None or avg_section_embedding.size == 0:
-                                    st.warning(f"Failed to calculate average embedding for {url}")
-                                    continue
-                                    
-                                # Calculate similarity with current page
-                                similarity = calculate_similarity(current_page_embedding, avg_section_embedding)
-                                
-                                # Calculate query similarity if keyword exists
-                                query_similarity = None
-                                if 'keyword_embedding' in locals() and keyword_embedding is not None:
-                                    query_similarity = calculate_similarity(keyword_embedding, avg_section_embedding)
+                                # Calculate weighted similarity across all sections
+                                weighted_similarity, detailed_scores, metrics = calculate_weighted_similarity(
+                                    sections_with_embeddings, 
+                                    current_page_embedding
+                                )
                                 
                                 url_results.append({
                                     'url': url,
-                                    'similarity': similarity,
-                                    'query_similarity': query_similarity,
-                                    'sections_count': len(sections)
+                                    'weighted_similarity': weighted_similarity,
+                                    'raw_avg_similarity': metrics['raw_avg'],
+                                    'raw_max_similarity': metrics['raw_max'],
+                                    'raw_min_similarity': metrics['raw_min'],
+                                    'similarity_std_dev': metrics['std_dev'],
+                                    'sections_count': metrics['section_count'],
+                                    'most_similar_section': detailed_scores[0]['heading'] if detailed_scores else 'No heading',
+                                    'most_similar_text': detailed_scores[0]['text_preview'] if detailed_scores else '',
+                                    'detailed_scores': detailed_scores
                                 })
                             except Exception as e:
                                 st.warning(f"Error processing embeddings for {url}: {str(e)}")
@@ -1395,58 +1528,95 @@ with tab3:
                 
                 if url_results:
                     # Sort URLs by similarity to current page
-                    url_results.sort(key=lambda x: x['similarity'], reverse=True)
+                    url_results.sort(key=lambda x: x['weighted_similarity'], reverse=True)
                     
-                    # Calculate average similarity
-                    try:
-                        avg_similarity = np.mean([r['similarity'] for r in url_results])
-                        
-                        # Display overall results
-                        st.subheader("Similarity Results")
+                    # Display overall results
+                    st.subheader("Comparison Results")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
                         st.metric(
-                            label="Average Similarity to Analyzed Webpage",
-                            value=f"{avg_similarity:.3f}",
-                            help="Average similarity between the analyzed webpage and all URLs"
+                            label="Average Weighted Similarity",
+                            value=f"{np.mean([r['weighted_similarity'] for r in url_results]):.3f}",
+                            help="Weighted average similarity between the keyword and all analyzed URLs"
                         )
-                        
-                        # Display top 3 most similar URLs
-                        st.subheader("Most Similar URLs")
-                        for i, result in enumerate(url_results[:3], 1):
-                            st.markdown(f"""
-                            **{i}. {result['url']}**  
-                            Similarity: {result['similarity']:.3f}  
-                            Sections analyzed: {result['sections_count']}
-                            """)
-                        
-                        # Display all URLs in a table
-                        st.subheader("All URL Similarities")
-                        df = pd.DataFrame(url_results)
-                        df['similarity'] = df['similarity'].round(3)
-                        if 'query_similarity' in df.columns:
-                            df['query_similarity'] = df['query_similarity'].round(3)
-                        
-                        # Rename columns
-                        column_rename = {
-                            'url': 'URL',
-                            'similarity': 'Similarity to Webpage',
-                            'sections_count': 'Sections Analyzed'
-                        }
-                        if 'query_similarity' in df.columns:
-                            column_rename['query_similarity'] = 'Query Similarity'
-                        
-                        df = df.rename(columns=column_rename)
-                        st.dataframe(df, use_container_width=True)
-                        
-                        # Add download button for results
-                        csv = df.to_csv(index=False)
-                        st.download_button(
-                            label="Download Analysis Results as CSV",
-                            data=csv,
-                            file_name="url_analysis.csv",
-                            mime="text/csv"
+                    with col2:
+                        st.metric(
+                            label="Highest Similarity",
+                            value=f"{np.max([r['raw_max_similarity'] for r in url_results]):.3f}",
+                            help="Highest similarity score found across all URLs"
                         )
-                    except Exception as e:
-                        st.error(f"Error calculating or displaying results: {str(e)}")
+                    with col3:
+                        st.metric(
+                            label="Average Std Dev",
+                            value=f"{np.mean([r['similarity_std_dev'] for r in url_results]):.3f}",
+                            help="Average standard deviation of similarity scores"
+                        )
+                    
+                    # Display top 3 most similar URLs
+                    st.subheader("Most Similar URLs")
+                    for i, result in enumerate(url_results[:3], 1):
+                        st.markdown(f"""
+                        **{i}. {result['url']}**  
+                        Weighted Similarity: {result['weighted_similarity']:.3f}  
+                        Raw Average: {result['raw_avg_similarity']:.3f}  
+                        Raw Max: {result['raw_max_similarity']:.3f}  
+                        Raw Min: {result['raw_min_similarity']:.3f}  
+                        Std Dev: {result['similarity_std_dev']:.3f}  
+                        Sections analyzed: {result['sections_count']}  
+                        Most similar section: {result['most_similar_section']}  
+                        Preview: {result['most_similar_text']}
+                        """)
+                        
+                        # Show detailed scores for top sections
+                        if result['detailed_scores']:
+                            st.markdown("**Top 3 Most Similar Sections:**")
+                            for j, score in enumerate(result['detailed_scores'][:3], 1):
+                                st.markdown(f"""
+                                {j}. {score['heading']}  
+                                Similarity: {score['similarity']:.3f}  
+                                Weight: {score['weight']:.3f}  
+                                Length: {score['length']} words  
+                                Preview: {score['text_preview']}
+                                """)
+                    
+                    # Display all URLs in a table
+                    st.subheader("All URL Similarities")
+                    df = pd.DataFrame(url_results)
+                    # Round numeric columns
+                    numeric_cols = ['weighted_similarity', 'raw_avg_similarity', 'raw_max_similarity', 
+                                  'raw_min_similarity', 'similarity_std_dev']
+                    df[numeric_cols] = df[numeric_cols].round(3)
+                    
+                    # Rename columns
+                    df = df.rename(columns={
+                        'url': 'URL',
+                        'weighted_similarity': 'Weighted Similarity',
+                        'raw_avg_similarity': 'Raw Average',
+                        'raw_max_similarity': 'Raw Maximum',
+                        'raw_min_similarity': 'Raw Minimum',
+                        'similarity_std_dev': 'Std Deviation',
+                        'sections_count': 'Sections Analyzed',
+                        'most_similar_section': 'Most Similar Section',
+                        'most_similar_text': 'Section Preview'
+                    })
+                    
+                    # Reorder columns
+                    df = df[['URL', 'Weighted Similarity', 'Raw Average', 'Raw Maximum', 
+                            'Raw Minimum', 'Std Deviation', 'Sections Analyzed', 
+                            'Most Similar Section', 'Section Preview']]
+                    
+                    st.dataframe(df, use_container_width=True)
+                    
+                    # Add download button for results
+                    csv = df.to_csv(index=False)
+                    st.download_button(
+                        label="Download Analysis Results as CSV",
+                        data=csv,
+                        file_name="url_analysis.csv",
+                        mime="text/csv"
+                    )
+                except Exception as e:
+                    st.error(f"Error calculating or displaying results: {str(e)}")
                 else:
                     st.error("""
                     No URLs were successfully analyzed. This could be due to:
