@@ -675,7 +675,8 @@ def extract_sections_from_json(json_data):
                             'type': heading.name,
                             'heading': heading_text,
                             'text': heading_text,
-                            'content': []
+                            'content': [],
+                            'level': int(heading.name[1]) if heading.name.startswith('h') else 0
                         }
                         debug_log(f"\nStarting new {heading.name} section: {heading_text[:100]}")
                         
@@ -937,8 +938,31 @@ def scrape_webpage(url):
                                 current_section = None
                                 current_level = 0
                                 
-                                for element in content_elements:
-                                    if element['type'].startswith('h'):  # This is a heading
+                                # First, find all H1 elements to ensure they start sections
+                                h1_elements = [elem for elem in content_elements if elem['type'] == 'h1']
+                                debug_log(f"\nFound {len(h1_elements)} H1 elements")
+                                
+                                # Process elements in order
+                                for i, element in enumerate(content_elements):
+                                    if element['type'] == 'h1':  # Always start new section for H1
+                                        debug_log(f"\nFound H1 element: {element['text'][:100]}")
+                                        # If we have a current section, save it
+                                        if current_section:
+                                            debug_log(f"Completing previous section: {current_section['heading'][:100]}")
+                                            sections.append(current_section)
+                                        
+                                        # Start new section with H1
+                                        current_section = {
+                                            'type': 'h1',
+                                            'heading': element['text'],
+                                            'text': element['text'],
+                                            'content': [],
+                                            'level': 1
+                                        }
+                                        current_level = 1
+                                        debug_log(f"Created new H1 section: {element['text'][:100]}")
+                                        
+                                    elif element['type'].startswith('h'):  # Other headings
                                         debug_log(f"\nProcessing heading element: {element['type']}")
                                         debug_log(f"Heading text: {element['text'][:100]}")
                                         debug_log(f"Heading level: {element['level']}")
@@ -964,7 +988,7 @@ def scrape_webpage(url):
                                         current_section['content'].append(element['text'])
                                         current_section['text'] = f"{current_section['heading']} {' '.join(current_section['content'])}"
                                     else:
-                                        # Create a default section for content before first heading
+                                        # If we haven't found any headings yet, create a default section
                                         debug_log("Creating default section for content before first heading")
                                         current_section = {
                                             'type': 'content',
@@ -986,6 +1010,8 @@ def scrape_webpage(url):
                                         debug_log(f"Level: {section.get('level', 0)}")
                                         debug_log(f"Heading: {section['heading'][:100]}")
                                         debug_log(f"Content items: {len(section['content'])}")
+                                        if section['type'] == 'h1':
+                                            debug_log("This is an H1 section")
                                     
                                     processed_content.extend(sections)
                                     debug_log(f"\nExtracted {len(sections)} sections from content block {i+1}")
