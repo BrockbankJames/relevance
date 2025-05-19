@@ -96,6 +96,10 @@ with st.spinner("Initializing Vertex AI..."):
 
 def get_embedding(text):
     """Generate embedding using Vertex AI text-embedding-005 model"""
+    if not text or not isinstance(text, str):
+        st.error("Invalid input: text must be a non-empty string")
+        return None
+        
     try:
         debug_log("Starting embedding generation...")
         debug_log(f"Input text length: {len(text)} characters")
@@ -126,13 +130,25 @@ def get_embedding(text):
             embeddings = model.get_embeddings(texts_to_embed)
             debug_log("get_embeddings call completed")
             
+            if not embeddings or len(embeddings) == 0:
+                st.error("No embeddings were returned from the model")
+                return None
+                
             debug_log("Processing embeddings response...")
             debug_log(f"Embeddings type: {type(embeddings)}")
             debug_log(f"Number of embeddings returned: {len(embeddings)}")
             
             # Extract the embedding from the response
             debug_log("Extracting embedding values...")
+            if not hasattr(embeddings[0], 'values'):
+                st.error("Embedding response does not contain expected 'values' attribute")
+                return None
+                
             embedding = np.array(embeddings[0].values)
+            if embedding is None or embedding.size == 0:
+                st.error("Failed to convert embedding to numpy array")
+                return None
+                
             debug_log(f"Embedding shape: {embedding.shape}")
             debug_log(f"Embedding type: {embedding.dtype}")
             debug_log("Embedding generation complete!")
@@ -241,24 +257,27 @@ with tab1:
     if keyword_input:
         with st.spinner("Generating embedding..."):
             keyword_embedding = get_embedding(keyword_input)
-        
-        # Display embedding information
-        st.subheader("Embedding Information")
-        st.write(f"Vector dimension: {len(keyword_embedding)}")
-        st.write(f"Vector shape: {keyword_embedding.shape}")
-        st.write(f"Data type: {keyword_embedding.dtype}")
-        
-        # Display the embedding vector
-        st.subheader("Embedding Vector")
-        st.code(keyword_embedding.tolist())
-        
-        # Add download button for the embedding
-        st.download_button(
-            label="Download Embedding as CSV",
-            data=",".join(map(str, keyword_embedding)),
-            file_name="keyword_embedding.csv",
-            mime="text/csv"
-        )
+            
+        if keyword_embedding is not None:
+            # Display embedding information
+            st.subheader("Embedding Information")
+            st.write(f"Vector dimension: {len(keyword_embedding)}")
+            st.write(f"Vector shape: {keyword_embedding.shape}")
+            st.write(f"Data type: {keyword_embedding.dtype}")
+            
+            # Display the embedding vector
+            st.subheader("Embedding Vector")
+            st.code(keyword_embedding.tolist())
+            
+            # Add download button for the embedding
+            st.download_button(
+                label="Download Embedding as CSV",
+                data=",".join(map(str, keyword_embedding)),
+                file_name="keyword_embedding.csv",
+                mime="text/csv"
+            )
+        else:
+            st.error("Failed to generate embedding. Please check the error messages above.")
 
 with tab2:
     st.subheader("Analyze Webpage Content")
@@ -276,33 +295,39 @@ with tab2:
                 section_embeddings = []
                 for section in sections:
                     embedding = get_embedding(section['text'])
-                    section_embeddings.append(embedding)
+                    if embedding is not None:
+                        section_embeddings.append(embedding)
             
-            # If we have a keyword embedding from tab1, calculate similarity
-            if 'keyword_embedding' in locals():
-                st.subheader("Similarity Analysis")
-                
-                # Average all section embeddings
-                avg_section_embedding = np.mean(section_embeddings, axis=0)
-                
-                # Calculate single cosine similarity between keyword and averaged section embeddings
-                similarity = calculate_similarity(keyword_embedding, avg_section_embedding)
-                
-                # Display the similarity score
-                st.metric(
-                    label="Page Similarity Score",
-                    value=f"{similarity:.3f}",
-                    help="Cosine similarity between the keyword and the average of all webpage content embeddings (range: -1 to 1)"
-                )
-                
-                # Add explanation
-                st.info("""
-                This similarity score is calculated by:
-                1. Averaging all section embeddings from the webpage
-                2. Computing cosine similarity between the keyword embedding and the averaged webpage embedding
-                """)
+            if section_embeddings:
+                # If we have a keyword embedding from tab1, calculate similarity
+                if 'keyword_embedding' in locals() and keyword_embedding is not None:
+                    st.subheader("Similarity Analysis")
+                    
+                    # Average all section embeddings
+                    avg_section_embedding = np.mean(section_embeddings, axis=0)
+                    
+                    # Calculate single cosine similarity between keyword and averaged section embeddings
+                    similarity = calculate_similarity(keyword_embedding, avg_section_embedding)
+                    
+                    # Display the similarity score
+                    st.metric(
+                        label="Page Similarity Score",
+                        value=f"{similarity:.3f}",
+                        help="Cosine similarity between the keyword and the average of all webpage content embeddings (range: -1 to 1)"
+                    )
+                    
+                    # Add explanation
+                    st.info("""
+                    This similarity score is calculated by:
+                    1. Averaging all section embeddings from the webpage
+                    2. Computing cosine similarity between the keyword embedding and the averaged webpage embedding
+                    """)
+                else:
+                    st.info("Enter a keyword in the first tab to analyze similarities with webpage content.")
             else:
-                st.info("Enter a keyword in the first tab to analyze similarities with webpage content.")
+                st.error("Failed to generate embeddings for any sections. Please check the error messages above.")
+        else:
+            st.error("Failed to scrape webpage content. Please check the URL and try again.")
 
 with tab3:
     st.subheader("Analyze Link Profile")
