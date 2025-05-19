@@ -1507,22 +1507,32 @@ def calculate_weighted_similarity(sections, keyword_embedding):
         debug_log(f"Full error: {repr(e)}")
         return 0.0, [], {}
 
-# Create tabs for different input methods
-tab1, tab2, tab3 = st.tabs(["Webpage Analysis", "Link Profile Analysis", "URL Comparison"])
+# Create tabs
+tab1, tab2, tab3 = st.tabs([
+    "Webpage Analysis",
+    "Link Profile Analysis",
+    "URL Comparison"
+])
 
 with tab1:
     st.subheader("Analyze Webpage Content")
+    st.markdown("""
+    Enter a URL and either a single keyword or a keyword cluster to analyze the webpage's content.
+    The app will:
+    1. Scrape the webpage content
+    2. Break it into logical sections
+    3. Compare each section with your keyword/cluster
+    4. Show which sections are most relevant
+    """)
     
-    # Add embedding source selection
+    # Embedding source selection
     embedding_source = st.radio(
         "Select embedding source:",
         ["Single Keyword", "Keyword Cluster"],
-        horizontal=True,
-        help="Choose whether to analyze the webpage against a single keyword or a cluster of keywords",
         key="tab1_embedding_source"
     )
     
-    # Input fields based on selection
+    # Dynamic input fields based on selection
     if embedding_source == "Single Keyword":
         keyword_input = st.text_input(
             "Enter keyword:",
@@ -1533,63 +1543,42 @@ with tab1:
         if keyword_input:
             with st.spinner("Generating keyword embedding..."):
                 embedding_to_use = get_cached_embedding(keyword_input)
-                if embedding_to_use is not None:
-                    st.success("Keyword embedding generated successfully")
-                else:
-                    st.error("Failed to generate keyword embedding")
+                if embedding_to_use is None:
+                    st.error("Failed to generate keyword embedding. Please try again.")
+                    st.stop()
     else:  # Keyword Cluster
-        # Get cluster name and keywords
         cluster_name = st.text_input(
             "Enter cluster name:",
-            placeholder="e.g., Car Insurance Terms, Home Insurance Keywords, etc.",
+            placeholder="e.g., Insurance Terms",
             key="tab1_cluster_name"
         )
         keywords_input = st.text_area(
             "Enter keywords (one per line):",
             height=150,
-            placeholder="Enter your keywords here, one per line...\ne.g.,\ncar insurance\nauto insurance\nvehicle insurance",
+            placeholder="car insurance\nauto insurance\nvehicle coverage",
             key="tab1_keywords_input"
         )
-        
+        embedding_to_use = None
         if cluster_name and keywords_input:
             keywords = [k.strip() for k in keywords_input.split('\n') if k.strip()]
             if keywords:
-                with st.spinner(f"Generating embeddings for {len(keywords)} keywords..."):
+                with st.spinner("Generating cluster embeddings..."):
                     # Generate embeddings for each keyword
-                    keyword_embeddings = {}
-                    progress_bar = st.progress(0)
+                    keyword_embeddings = get_cached_embedding(keywords)
+                    if keyword_embeddings is None:
+                        st.error("Failed to generate keyword embeddings. Please try again.")
+                        st.stop()
                     
-                    for i, keyword in enumerate(keywords):
-                        embedding = get_cached_embedding(keyword)
-                        if embedding is not None and isinstance(embedding, np.ndarray):
-                            keyword_embeddings[keyword] = embedding
-                        progress_bar.progress((i + 1) / len(keywords))
+                    # Calculate average embedding for the cluster
+                    cluster_embedding = np.mean(keyword_embeddings, axis=0)
+                    embedding_to_use = cluster_embedding
                     
-                    if keyword_embeddings:
-                        # Calculate average cluster embedding
-                        embedding_to_use = np.mean(list(keyword_embeddings.values()), axis=0)
-                        st.success(f"Generated cluster embedding from {len(keyword_embeddings)} keywords")
-                        
-                        # Show cluster details
-                        with st.expander("Cluster Details"):
-                            st.write(f"Cluster Name: {cluster_name}")
-                            st.write(f"Number of Keywords: {len(keyword_embeddings)}")
-                            st.write("Keywords used:")
-                            for keyword in keyword_embeddings.keys():
-                                st.write(f"- {keyword}")
-                    else:
-                        st.error("Failed to generate embeddings for any keywords")
-                        embedding_to_use = None
-            else:
-                st.warning("Please enter at least one keyword")
-                embedding_to_use = None
-        else:
-            st.info("Please enter both cluster name and keywords")
-            embedding_to_use = None
+                    # Show cluster information
+                    st.success(f"Generated embeddings for {len(keywords)} keywords in cluster '{cluster_name}'")
     
     # URL input
     url_input = st.text_input(
-        "Enter webpage URL:",
+        "Enter URL to analyze:",
         placeholder="https://example.com",
         key="tab1_url_input"
     )
@@ -1740,23 +1729,22 @@ with tab1:
 with tab2:
     st.subheader("Analyze Link Profile")
     st.markdown("""
-    Enter URLs (one per line) to analyze their similarity to a keyword or keyword cluster.
-    The app will show:
-    - How similar each URL is to the keyword/cluster
-    - Most relevant URLs ranked by similarity
-    - Individual URL scores
+    Enter a keyword/cluster and up to 10 URLs to analyze their link profile relevance.
+    The app will:
+    1. Analyze each URL's content
+    2. Compare it with your keyword/cluster
+    3. Show which URLs are most relevant
+    4. Provide detailed section analysis
     """)
     
-    # Add embedding source selection
+    # Embedding source selection
     embedding_source = st.radio(
         "Select embedding source:",
         ["Single Keyword", "Keyword Cluster"],
-        horizontal=True,
-        help="Choose whether to analyze URLs against a single keyword or a cluster of keywords",
         key="tab2_embedding_source"
     )
     
-    # Input fields based on selection
+    # Dynamic input fields based on selection
     if embedding_source == "Single Keyword":
         keyword_input = st.text_input(
             "Enter keyword:",
@@ -1767,63 +1755,42 @@ with tab2:
         if keyword_input:
             with st.spinner("Generating keyword embedding..."):
                 embedding_to_use = get_cached_embedding(keyword_input)
-                if embedding_to_use is not None:
-                    st.success("Keyword embedding generated successfully")
-                else:
-                    st.error("Failed to generate keyword embedding")
+                if embedding_to_use is None:
+                    st.error("Failed to generate keyword embedding. Please try again.")
+                    st.stop()
     else:  # Keyword Cluster
-        # Get cluster name and keywords
         cluster_name = st.text_input(
             "Enter cluster name:",
-            placeholder="e.g., Car Insurance Terms, Home Insurance Keywords, etc.",
+            placeholder="e.g., Insurance Terms",
             key="tab2_cluster_name"
         )
         keywords_input = st.text_area(
             "Enter keywords (one per line):",
             height=150,
-            placeholder="Enter your keywords here, one per line...\ne.g.,\ncar insurance\nauto insurance\nvehicle insurance",
+            placeholder="car insurance\nauto insurance\nvehicle coverage",
             key="tab2_keywords_input"
         )
-        
+        embedding_to_use = None
         if cluster_name and keywords_input:
             keywords = [k.strip() for k in keywords_input.split('\n') if k.strip()]
             if keywords:
-                with st.spinner(f"Generating embeddings for {len(keywords)} keywords..."):
+                with st.spinner("Generating cluster embeddings..."):
                     # Generate embeddings for each keyword
-                    keyword_embeddings = {}
-                    progress_bar = st.progress(0)
+                    keyword_embeddings = get_cached_embedding(keywords)
+                    if keyword_embeddings is None:
+                        st.error("Failed to generate keyword embeddings. Please try again.")
+                        st.stop()
                     
-                    for i, keyword in enumerate(keywords):
-                        embedding = get_cached_embedding(keyword)
-                        if embedding is not None and isinstance(embedding, np.ndarray):
-                            keyword_embeddings[keyword] = embedding
-                        progress_bar.progress((i + 1) / len(keywords))
+                    # Calculate average embedding for the cluster
+                    cluster_embedding = np.mean(keyword_embeddings, axis=0)
+                    embedding_to_use = cluster_embedding
                     
-                    if keyword_embeddings:
-                        # Calculate average cluster embedding
-                        embedding_to_use = np.mean(list(keyword_embeddings.values()), axis=0)
-                        st.success(f"Generated cluster embedding from {len(keyword_embeddings)} keywords")
-                        
-                        # Show cluster details
-                        with st.expander("Cluster Details"):
-                            st.write(f"Cluster Name: {cluster_name}")
-                            st.write(f"Number of Keywords: {len(keyword_embeddings)}")
-                            st.write("Keywords used:")
-                            for keyword in keyword_embeddings.keys():
-                                st.write(f"- {keyword}")
-                    else:
-                        st.error("Failed to generate embeddings for any keywords")
-                        embedding_to_use = None
-            else:
-                st.warning("Please enter at least one keyword")
-                embedding_to_use = None
-        else:
-            st.info("Please enter both cluster name and keywords")
-            embedding_to_use = None
+                    # Show cluster information
+                    st.success(f"Generated embeddings for {len(keywords)} keywords in cluster '{cluster_name}'")
     
-    # Get URLs input
+    # URLs input
     urls_input = st.text_area(
-        "Enter URLs to analyze (one per line):",
+        "Enter URLs to analyze (one per line, max 10):",
         height=150,
         placeholder="https://example1.com\nhttps://example2.com\nhttps://example3.com",
         key="tab2_urls_input"
