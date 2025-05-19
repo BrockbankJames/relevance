@@ -191,9 +191,10 @@ with tab2:
 with tab3:
     st.subheader("Analyze Multiple URLs")
     st.markdown("""
-    Enter a list of URLs (one per line) to analyze their relevance to your keyword.
-    The app will analyze each URL and show:
-    - Average relevance across all URLs
+    Enter a list of URLs (one per line) to analyze their relevance to your keyword and to each other.
+    The app will show:
+    - Query relevance: How similar each URL is to your keyword
+    - URL similarity: How similar the URLs are to each other
     - Most relevant URLs ranked by similarity
     - Individual URL scores
     """)
@@ -205,13 +206,14 @@ with tab3:
         placeholder="https://example1.com\nhttps://example2.com\nhttps://example3.com"
     )
     
-    if urls_input and 'keyword_embedding' in locals():
+    if urls_input:
         # Process URLs
         urls = [url.strip() for url in urls_input.split('\n') if url.strip()]
         
         if urls:
             # Store results for each URL
             url_results = []
+            url_embeddings = {}  # Store embeddings for URL-to-URL comparison
             
             # Process each URL
             with st.spinner(f"Analyzing {len(urls)} URLs..."):
@@ -228,67 +230,136 @@ with tab3:
                             
                             # Average section embeddings
                             avg_section_embedding = np.mean(section_embeddings, axis=0)
+                            url_embeddings[url] = avg_section_embedding
                             
-                            # Calculate similarity
-                            similarity = calculate_similarity(keyword_embedding, avg_section_embedding)
+                            # Calculate query similarity if keyword exists
+                            query_similarity = None
+                            if 'keyword_embedding' in locals():
+                                query_similarity = calculate_similarity(keyword_embedding, avg_section_embedding)
                             
                             url_results.append({
                                 'url': url,
-                                'similarity': similarity,
+                                'query_similarity': query_similarity,
                                 'sections_count': len(sections)
                             })
                     except Exception as e:
                         st.warning(f"Error processing {url}: {str(e)}")
             
             if url_results:
-                # Sort URLs by similarity
-                url_results.sort(key=lambda x: x['similarity'], reverse=True)
+                # Calculate URL-to-URL similarities
+                url_similarities = []
+                for i, url1 in enumerate(urls):
+                    for url2 in urls[i+1:]:  # Only compare each pair once
+                        if url1 in url_embeddings and url2 in url_embeddings:
+                            similarity = calculate_similarity(url_embeddings[url1], url_embeddings[url2])
+                            url_similarities.append({
+                                'url1': url1,
+                                'url2': url2,
+                                'similarity': similarity
+                            })
                 
-                # Calculate average similarity
-                avg_similarity = np.mean([r['similarity'] for r in url_results])
+                # Create tabs for different views
+                query_tab, url_tab = st.tabs(["Query Relevance", "URL Similarity"])
                 
-                # Display overall results
-                st.subheader("Overall Results")
-                st.metric(
-                    label="Average Profile Relevance",
-                    value=f"{avg_similarity:.3f}",
-                    help="Average similarity across all analyzed URLs"
-                )
+                with query_tab:
+                    if 'keyword_embedding' in locals():
+                        # Sort URLs by query similarity
+                        url_results.sort(key=lambda x: x['query_similarity'] if x['query_similarity'] is not None else -1, reverse=True)
+                        
+                        # Calculate average query similarity
+                        query_similarities = [r['query_similarity'] for r in url_results if r['query_similarity'] is not None]
+                        if query_similarities:
+                            avg_query_similarity = np.mean(query_similarities)
+                            
+                            # Display overall results
+                            st.subheader("Query Relevance Results")
+                            st.metric(
+                                label="Average Query Relevance",
+                                value=f"{avg_query_similarity:.3f}",
+                                help="Average similarity to your keyword across all analyzed URLs"
+                            )
+                            
+                            # Display top 3 most relevant URLs
+                            st.subheader("Most Relevant URLs to Query")
+                            for i, result in enumerate(url_results[:3], 1):
+                                if result['query_similarity'] is not None:
+                                    st.markdown(f"""
+                                    **{i}. {result['url']}**  
+                                    Query Similarity: {result['query_similarity']:.3f}  
+                                    Sections analyzed: {result['sections_count']}
+                                    """)
+                            
+                            # Display all URLs in a table
+                            st.subheader("All URLs Query Relevance")
+                            import pandas as pd
+                            df_query = pd.DataFrame(url_results)
+                            df_query['query_similarity'] = df_query['query_similarity'].round(3)
+                            df_query = df_query.rename(columns={
+                                'url': 'URL',
+                                'query_similarity': 'Query Similarity Score',
+                                'sections_count': 'Sections Analyzed'
+                            })
+                            st.dataframe(df_query, use_container_width=True)
+                            
+                            # Add download button for query results
+                            csv_query = df_query.to_csv(index=False)
+                            st.download_button(
+                                label="Download Query Results as CSV",
+                                data=csv_query,
+                                file_name="url_query_analysis.csv",
+                                mime="text/csv"
+                            )
+                    else:
+                        st.info("Enter a keyword in the first tab to see query relevance analysis.")
                 
-                # Display top 3 most relevant URLs
-                st.subheader("Most Relevant URLs")
-                for i, result in enumerate(url_results[:3], 1):
-                    st.markdown(f"""
-                    **{i}. {result['url']}**  
-                    Similarity: {result['similarity']:.3f}  
-                    Sections analyzed: {result['sections_count']}
-                    """)
-                
-                # Display all URLs in a table
-                st.subheader("All URLs Analysis")
-                # Create a DataFrame for better display
-                import pandas as pd
-                df = pd.DataFrame(url_results)
-                df['similarity'] = df['similarity'].round(3)
-                df = df.rename(columns={
-                    'url': 'URL',
-                    'similarity': 'Similarity Score',
-                    'sections_count': 'Sections Analyzed'
-                })
-                st.dataframe(df, use_container_width=True)
-                
-                # Add download button for the results
-                csv = df.to_csv(index=False)
-                st.download_button(
-                    label="Download Results as CSV",
-                    data=csv,
-                    file_name="url_analysis_results.csv",
-                    mime="text/csv"
-                )
+                with url_tab:
+                    if url_similarities:
+                        # Sort URL similarities
+                        url_similarities.sort(key=lambda x: x['similarity'], reverse=True)
+                        
+                        # Calculate average URL similarity
+                        avg_url_similarity = np.mean([s['similarity'] for s in url_similarities])
+                        
+                        # Display overall results
+                        st.subheader("URL Similarity Results")
+                        st.metric(
+                            label="Average URL Similarity",
+                            value=f"{avg_url_similarity:.3f}",
+                            help="Average similarity between URLs across all pairs"
+                        )
+                        
+                        # Display top 3 most similar URL pairs
+                        st.subheader("Most Similar URL Pairs")
+                        for i, pair in enumerate(url_similarities[:3], 1):
+                            st.markdown(f"""
+                            **{i}. {pair['url1']}**  
+                            **   {pair['url2']}**  
+                            Similarity: {pair['similarity']:.3f}
+                            """)
+                        
+                        # Display all URL pairs in a table
+                        st.subheader("All URL Pair Similarities")
+                        df_url = pd.DataFrame(url_similarities)
+                        df_url['similarity'] = df_url['similarity'].round(3)
+                        df_url = df_url.rename(columns={
+                            'url1': 'URL 1',
+                            'url2': 'URL 2',
+                            'similarity': 'Similarity Score'
+                        })
+                        st.dataframe(df_url, use_container_width=True)
+                        
+                        # Add download button for URL similarity results
+                        csv_url = df_url.to_csv(index=False)
+                        st.download_button(
+                            label="Download URL Similarity Results as CSV",
+                            data=csv_url,
+                            file_name="url_similarity_analysis.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.warning("Not enough URLs were successfully analyzed to calculate URL similarities.")
             else:
                 st.error("No URLs were successfully analyzed. Please check the URLs and try again.")
-    elif urls_input and 'keyword_embedding' not in locals():
-        st.info("Please enter a keyword in the first tab before analyzing URLs.")
 
 # Add footer
 st.markdown("---")
