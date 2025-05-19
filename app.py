@@ -912,13 +912,13 @@ def scrape_webpage(url):
                             # Create sections list to store all sections
                             sections = []
                             
-                            # First pass: Create H1 sections
+                            # First pass: Create H1 sections and their following content sections
                             for h1 in all_h1s:
                                 if h1 not in processed_h1s:
                                     debug_log(f"\nProcessing H1 element: {h1.get_text().strip()[:100]}")
                                     h1_text = h1.get_text().strip()
-                                    if h1_text:  # Remove length check to capture all H1s
-                                        # Create H1 section
+                                    if h1_text:
+                                        # Create H1 section (just the heading)
                                         h1_section = {
                                             'type': 'h1',
                                             'heading': h1_text,
@@ -930,19 +930,34 @@ def scrape_webpage(url):
                                         processed_h1s.add(h1)
                                         debug_log(f"Created H1 section: {h1_text[:100]}")
                                         
-                                        # Get content until next heading
+                                        # Create a separate section for content between H1 and H2
+                                        content_section = {
+                                            'type': 'h1-content',
+                                            'heading': f"Content after {h1_text}",
+                                            'text': '',
+                                            'content': [],
+                                            'level': 1.5  # Between H1 and H2
+                                        }
+                                        
+                                        # Get content until next H2
                                         current = h1.next_sibling
-                                        while current and not (hasattr(current, 'name') and 
-                                                             current.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+                                        content_found = False
+                                        while current and not (hasattr(current, 'name') and current.name == 'h2'):
                                             if hasattr(current, 'name'):
                                                 text = current.get_text().strip()
-                                                if text:  # Remove length check to capture all content
-                                                    h1_section['content'].append(text)
-                                                    h1_section['text'] = f"{h1_section['heading']} {' '.join(h1_section['content'])}"
-                                                    debug_log(f"Added content to H1 section: {text[:100]}")
+                                                if text:
+                                                    content_section['content'].append(text)
+                                                    content_found = True
+                                                    debug_log(f"Added content after H1: {text[:100]}")
                                             current = current.next_sibling
+                                        
+                                        # Only add the content section if we found content
+                                        if content_found:
+                                            content_section['text'] = ' '.join(content_section['content'])
+                                            sections.append(content_section)
+                                            debug_log(f"Created content section after H1 with {len(content_section['content'])} items")
                             
-                            # Second pass: Process remaining elements
+                            # Second pass: Process remaining elements (H2 and below)
                             for element in soup.find_all(['div', 'section', 'article', 'p', 'h2', 'h3', 'h4', 'h5', 'h6']):
                                 if element and element.parent:  # Check if element exists and has a parent
                                     debug_log(f"\nProcessing element: {element.name}")
