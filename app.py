@@ -1805,16 +1805,52 @@ with tab2:
                             if batch_embeddings is None:
                                 st.error(f"Failed to generate embeddings for keywords {i+1} to {min(i+batch_size, len(keywords))}. Please try again.")
                                 st.stop()
-                            keyword_embeddings.extend(batch_embeddings)
+                            
+                            # Validate and normalize each embedding
+                            valid_embeddings = []
+                            for emb in batch_embeddings:
+                                if isinstance(emb, np.ndarray) and emb.ndim == 1:
+                                    # Normalize the embedding
+                                    norm = np.linalg.norm(emb)
+                                    if norm > 0:
+                                        valid_embeddings.append(emb / norm)
+                                    else:
+                                        debug_log(f"Skipping embedding with zero norm")
+                                else:
+                                    debug_log(f"Skipping invalid embedding shape: {emb.shape if hasattr(emb, 'shape') else 'no shape'}")
+                            
+                            if valid_embeddings:
+                                keyword_embeddings.extend(valid_embeddings)
+                            else:
+                                st.error(f"No valid embeddings generated for keywords {i+1} to {min(i+batch_size, len(keywords))}")
+                                st.stop()
+                            
                             if i + batch_size < len(keywords):
                                 time.sleep(delay_between_batches)
                     
-                    # Calculate average embedding for the topic
-                    cluster_embedding = np.mean(keyword_embeddings, axis=0)
+                    if not keyword_embeddings:
+                        st.error("No valid embeddings were generated for any keywords")
+                        st.stop()
+                    
+                    # Ensure all embeddings have the same shape
+                    embedding_shape = keyword_embeddings[0].shape
+                    if not all(emb.shape == embedding_shape for emb in keyword_embeddings):
+                        st.error("Inconsistent embedding shapes detected")
+                        st.stop()
+                    
+                    # Convert to numpy array and calculate mean
+                    keyword_embeddings_array = np.array(keyword_embeddings)
+                    cluster_embedding = np.mean(keyword_embeddings_array, axis=0)
+                    
+                    # Normalize the final cluster embedding
+                    norm = np.linalg.norm(cluster_embedding)
+                    if norm > 0:
+                        cluster_embedding = cluster_embedding / norm
+                    
                     embedding_to_use = cluster_embedding
                     
                     # Show topic information
-                    st.success(f"Generated embeddings for {len(keywords)} keywords in topic '{cluster_name}'")
+                    st.success(f"Generated embeddings for {len(keyword_embeddings)} keywords in topic '{cluster_name}'")
     
     # URLs input
     urls_input = st.text_area(
