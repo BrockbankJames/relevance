@@ -672,7 +672,7 @@ def scrape_webpage(url):
         debug_log(f"\nScraping URL: {url}")
         debug_log(f"Encoded URL: {encoded_url}")
         
-        # Make the request to ScrapingBee API with simpler parameters
+        # Make the request to ScrapingBee API with extraction rules that exclude header/footer/nav
         params = {
             'api_key': api_key,
             'url': encoded_url,
@@ -683,7 +683,7 @@ def scrape_webpage(url):
             'block_resources': 'false',  # Don't block resources to avoid 500 errors
             'extract_rules': json.dumps({
                 'main_content': {
-                    'selector': 'body',
+                    'selector': 'body > *:not(header):not(footer):not(nav)',
                     'type': 'list',
                     'output': 'html'
                 }
@@ -732,13 +732,16 @@ def scrape_webpage(url):
                         debug_log(f"Content length: {len(content_html)} characters")
                         
                         try:
-                            # Create soup object and immediately remove unwanted elements
+                            # Create soup object and verify no header/footer/nav elements
                             soup = BeautifulSoup(content_html, 'html.parser')
                             
-                            # Remove all header, footer, and nav elements first
-                            for tag in soup.find_all(['header', 'footer', 'nav']):
-                                debug_log(f"Removing {tag.name} element and its contents")
-                                tag.decompose()
+                            # Double-check for any remaining header/footer/nav elements
+                            unwanted_elements = soup.find_all(['header', 'footer', 'nav'])
+                            if unwanted_elements:
+                                debug_log(f"Found {len(unwanted_elements)} unwanted elements, removing them...")
+                                for tag in unwanted_elements:
+                                    debug_log(f"Removing {tag.name} element and its contents")
+                                    tag.decompose()
                             
                             # Get the cleaned HTML
                             cleaned_html = str(soup)
