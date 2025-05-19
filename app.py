@@ -1508,213 +1508,9 @@ def calculate_weighted_similarity(sections, keyword_embedding):
         return 0.0, [], {}
 
 # Create tabs for different input methods
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["Keyword Embedding", "Keyword Cluster Embeddings", "Webpage Analysis", "Link Profile Analysis", "URL Comparison"])
+tab1, tab2, tab3 = st.tabs(["Webpage Analysis", "Link Profile Analysis", "URL Comparison"])
 
 with tab1:
-    st.subheader("Generate Embedding for Keyword")
-    keyword_input = st.text_area(
-        "Enter your keyword:",
-        height=100,
-        placeholder="Type or paste your keyword here...",
-        key="tab1_keyword_input"  # Added unique key
-    )
-    
-    if keyword_input:
-        with st.spinner("Generating embedding..."):
-            debug_log(f"Getting embedding for keyword: {keyword_input[:100]}")
-            embeddings = get_cached_embedding(keyword_input)
-            debug_log(f"Received embeddings type: {type(embeddings)}")
-            if embeddings is not None:
-                debug_log(f"Embeddings content: {str(embeddings)[:200]}")
-            
-        if embeddings is not None:
-            try:
-                # Handle both single embedding and list of embeddings
-                if isinstance(embeddings, list):
-                    if not embeddings:
-                        st.error("Received empty list of embeddings")
-                        st.stop()
-                    keyword_embedding = embeddings[0]
-                    debug_log(f"Extracted first embedding from list, type: {type(keyword_embedding)}")
-                else:
-                    keyword_embedding = embeddings
-                    debug_log(f"Using single embedding, type: {type(keyword_embedding)}")
-                
-                if not isinstance(keyword_embedding, np.ndarray):
-                    st.error(f"Invalid embedding type: {type(keyword_embedding)}")
-                    debug_log(f"Embedding content: {str(keyword_embedding)[:200]}")
-                    st.stop()
-                
-                # Display embedding information
-                st.subheader("Embedding Information")
-                try:
-                    st.write(f"Vector dimension: {keyword_embedding.shape[0]}")
-                    st.write(f"Vector shape: {keyword_embedding.shape}")
-                    st.write(f"Data type: {keyword_embedding.dtype}")
-                except Exception as e:
-                    st.error(f"Error displaying embedding information: {str(e)}")
-                    debug_log(f"Embedding shape: {getattr(keyword_embedding, 'shape', 'No shape')}")
-                    debug_log(f"Embedding type: {type(keyword_embedding)}")
-                    debug_log(f"Embedding content: {str(keyword_embedding)[:200]}")
-                    st.stop()
-                
-                # Display the embedding vector
-                st.subheader("Embedding Vector")
-                try:
-                    st.code(keyword_embedding.tolist())
-                except Exception as e:
-                    st.error(f"Error displaying embedding vector: {str(e)}")
-                    debug_log(f"Embedding content: {str(keyword_embedding)[:200]}")
-                    st.stop()
-                
-                # Add download button for the embedding
-                try:
-                    st.download_button(
-                        label="Download Embedding as CSV",
-                        data=",".join(map(str, keyword_embedding)),
-                        file_name="keyword_embedding.csv",
-                        mime="text/csv"
-                    )
-                except Exception as e:
-                    st.error(f"Error creating download button: {str(e)}")
-                    debug_log(f"Embedding content: {str(keyword_embedding)[:200]}")
-                    st.stop()
-            except Exception as e:
-                st.error(f"Error processing embedding: {str(e)}")
-                debug_log(f"Full error details: {str(e)}")
-                debug_log(f"Embeddings type: {type(embeddings)}")
-                debug_log(f"Embeddings content: {str(embeddings)[:200]}")
-                st.stop()
-        else:
-            st.error("Failed to generate embedding. Please check the error messages above.")
-            debug_log("get_cached_embedding returned None")
-
-with tab2:
-    st.subheader("Generate Embeddings for Keyword Cluster")
-    
-    # Input for cluster name
-    cluster_name = st.text_input(
-        "Enter cluster name:",
-        placeholder="e.g., Car Insurance Terms, Home Insurance Keywords, etc.",
-        key="tab2_cluster_name"  # Added unique key
-    )
-    
-    # Input for keywords
-    keywords_input = st.text_area(
-        "Enter keywords (one per line):",
-        height=200,
-        placeholder="Enter your keywords here, one per line...\ne.g.,\ncar insurance\nauto insurance\nvehicle insurance",
-        key="tab2_keywords_input"  # Added unique key
-    )
-    
-    if cluster_name and keywords_input:
-        # Process keywords
-        keywords = [k.strip() for k in keywords_input.split('\n') if k.strip()]
-        
-        if not keywords:
-            st.warning("Please enter at least one keyword.")
-        else:
-            with st.spinner(f"Generating embeddings for {len(keywords)} keywords..."):
-                # Generate embeddings for each keyword
-                keyword_embeddings = {}
-                progress_bar = st.progress(0)
-                
-                for i, keyword in enumerate(keywords):
-                    debug_log(f"\nProcessing keyword {i+1}/{len(keywords)}: {keyword}")
-                    embedding = get_cached_embedding(keyword)
-                    
-                    if embedding is not None and isinstance(embedding, np.ndarray):
-                        keyword_embeddings[keyword] = embedding
-                        debug_log(f"Successfully generated embedding for: {keyword}")
-                    else:
-                        st.warning(f"Failed to generate embedding for: {keyword}")
-                    
-                    # Update progress
-                    progress_bar.progress((i + 1) / len(keywords))
-                
-                if keyword_embeddings:
-                    # Calculate average cluster embedding
-                    cluster_embedding = np.mean(list(keyword_embeddings.values()), axis=0)
-                    
-                    # Display results
-                    st.subheader("Cluster Results")
-                    
-                    # Display cluster information
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric("Cluster Name", cluster_name)
-                    with col2:
-                        st.metric("Number of Keywords", len(keyword_embeddings))
-                    
-                    # Display individual keyword embeddings
-                    st.subheader("Individual Keyword Embeddings")
-                    for keyword, embedding in keyword_embeddings.items():
-                        with st.expander(f"Embedding for: {keyword}"):
-                            st.write(f"Vector dimension: {embedding.shape[0]}")
-                            st.write(f"Vector shape: {embedding.shape}")
-                            st.write(f"Data type: {embedding.dtype}")
-                            st.code(embedding.tolist())
-                            
-                            # Add download button for individual embedding
-                            st.download_button(
-                                label=f"Download {keyword} Embedding as CSV",
-                                data=",".join(map(str, embedding)),
-                                file_name=f"{keyword.lower().replace(' ', '_')}_embedding.csv",
-                                mime="text/csv"
-                            )
-                    
-                    # Display cluster embedding
-                    st.subheader("Cluster Average Embedding")
-                    st.write(f"Vector dimension: {cluster_embedding.shape[0]}")
-                    st.write(f"Vector shape: {cluster_embedding.shape}")
-                    st.write(f"Data type: {cluster_embedding.dtype}")
-                    st.code(cluster_embedding.tolist())
-                    
-                    # Add download button for cluster embedding
-                    st.download_button(
-                        label="Download Cluster Embedding as CSV",
-                        data=",".join(map(str, cluster_embedding)),
-                        file_name=f"{cluster_name.lower().replace(' ', '_')}_cluster_embedding.csv",
-                        mime="text/csv"
-                    )
-                    
-                    # Calculate and display similarities between keywords
-                    st.subheader("Keyword Similarities")
-                    similarity_matrix = pd.DataFrame(index=keywords, columns=keywords)
-                    
-                    for k1 in keywords:
-                        for k2 in keywords:
-                            if k1 in keyword_embeddings and k2 in keyword_embeddings:
-                                similarity = calculate_similarity(keyword_embeddings[k1], keyword_embeddings[k2])
-                                similarity_matrix.loc[k1, k2] = similarity
-                    
-                    # Round similarities to 3 decimal places
-                    similarity_matrix = similarity_matrix.round(3)
-                    
-                    # Display similarity matrix
-                    st.write("Similarity Matrix (values show cosine similarity between keywords):")
-                    st.dataframe(similarity_matrix, use_container_width=True)
-                    
-                    # Add download button for similarity matrix
-                    csv = similarity_matrix.to_csv()
-                    st.download_button(
-                        label="Download Similarity Matrix as CSV",
-                        data=csv,
-                        file_name=f"{cluster_name.lower().replace(' ', '_')}_similarities.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.error("""
-                    Failed to generate embeddings for any keywords. This could be due to:
-                    1. Vertex AI quota limits - Please try again later or request a quota increase
-                    2. Invalid content - Please check if the keywords are valid text
-                    
-                    You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
-                    """)
-    else:
-        st.info("Please enter both a cluster name and at least one keyword to generate embeddings.")
-
-with tab3:
     st.subheader("Analyze Webpage Content")
     
     # Add embedding source selection
@@ -1723,7 +1519,7 @@ with tab3:
         ["Single Keyword", "Keyword Cluster"],
         horizontal=True,
         help="Choose whether to analyze the webpage against a single keyword or a cluster of keywords",
-        key="tab3_embedding_source"  # Added unique key
+        key="tab1_embedding_source"
     )
     
     # Input fields based on selection
@@ -1731,7 +1527,7 @@ with tab3:
         keyword_input = st.text_input(
             "Enter keyword:",
             placeholder="Enter your keyword here...",
-            key="tab3_single_keyword"  # Added unique key
+            key="tab1_single_keyword"
         )
         embedding_to_use = None
         if keyword_input:
@@ -1746,13 +1542,13 @@ with tab3:
         cluster_name = st.text_input(
             "Enter cluster name:",
             placeholder="e.g., Car Insurance Terms, Home Insurance Keywords, etc.",
-            key="tab3_cluster_name"  # Added unique key
+            key="tab1_cluster_name"
         )
         keywords_input = st.text_area(
             "Enter keywords (one per line):",
             height=150,
             placeholder="Enter your keywords here, one per line...\ne.g.,\ncar insurance\nauto insurance\nvehicle insurance",
-            key="tab3_keywords_input"  # Added unique key
+            key="tab1_keywords_input"
         )
         
         if cluster_name and keywords_input:
@@ -1795,7 +1591,7 @@ with tab3:
     url_input = st.text_input(
         "Enter webpage URL:",
         placeholder="https://example.com",
-        key="tab3_url_input"  # Added unique key
+        key="tab1_url_input"
     )
     
     if url_input and embedding_to_use is not None:
@@ -1941,147 +1737,197 @@ with tab3:
     elif embedding_to_use is not None:
         st.info("Please enter a URL to analyze")
 
-with tab4:
+with tab2:
     st.subheader("Analyze Link Profile")
     st.markdown("""
-    Enter URLs (one per line) to analyze their similarity to the webpage you analyzed in the "Webpage Analysis" tab.
+    Enter URLs (one per line) to analyze their similarity to a keyword or keyword cluster.
     The app will show:
-    - How similar each URL is to the analyzed webpage
+    - How similar each URL is to the keyword/cluster
     - Most relevant URLs ranked by similarity
     - Individual URL scores
     """)
     
-    # Get URLs input
-    urls_input = st.text_area(
-        "Enter URLs (one per line):",
-        height=150,
-        placeholder="https://example1.com\nhttps://example2.com\nhttps://example3.com",
-        key="tab4_urls_input"  # Added unique key
+    # Add embedding source selection
+    embedding_source = st.radio(
+        "Select embedding source:",
+        ["Single Keyword", "Keyword Cluster"],
+        horizontal=True,
+        help="Choose whether to analyze URLs against a single keyword or a cluster of keywords",
+        key="tab2_embedding_source"
     )
     
-    if urls_input:
-        # Check if we have a webpage analyzed in tab 2
-        if 'url_input' not in locals() or not url_input:
-            st.warning("Please analyze a webpage in the 'Webpage Analysis' tab first.")
-        elif 'section_embeddings' not in locals() or not section_embeddings:
-            st.warning("""
-            No valid embeddings found for the analyzed webpage. This could be due to:
-            1. Vertex AI quota limits - Please try again later or request a quota increase
-            2. Invalid content - Please check if the webpage has valid text content
-            
-            You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
-            """)
-        else:
-            # Process URLs
-            urls = [url.strip() for url in urls_input.split('\n') if url.strip()]
-            
-            if not urls:
-                st.warning("Please enter at least one valid URL to analyze.")
+    # Input fields based on selection
+    if embedding_source == "Single Keyword":
+        keyword_input = st.text_input(
+            "Enter keyword:",
+            placeholder="Enter your keyword here...",
+            key="tab2_single_keyword"
+        )
+        embedding_to_use = None
+        if keyword_input:
+            with st.spinner("Generating keyword embedding..."):
+                embedding_to_use = get_cached_embedding(keyword_input)
+                if embedding_to_use is not None:
+                    st.success("Keyword embedding generated successfully")
+                else:
+                    st.error("Failed to generate keyword embedding")
+    else:  # Keyword Cluster
+        # Get cluster name and keywords
+        cluster_name = st.text_input(
+            "Enter cluster name:",
+            placeholder="e.g., Car Insurance Terms, Home Insurance Keywords, etc.",
+            key="tab2_cluster_name"
+        )
+        keywords_input = st.text_area(
+            "Enter keywords (one per line):",
+            height=150,
+            placeholder="Enter your keywords here, one per line...\ne.g.,\ncar insurance\nauto insurance\nvehicle insurance",
+            key="tab2_keywords_input"
+        )
+        
+        if cluster_name and keywords_input:
+            keywords = [k.strip() for k in keywords_input.split('\n') if k.strip()]
+            if keywords:
+                with st.spinner(f"Generating embeddings for {len(keywords)} keywords..."):
+                    # Generate embeddings for each keyword
+                    keyword_embeddings = {}
+                    progress_bar = st.progress(0)
+                    
+                    for i, keyword in enumerate(keywords):
+                        embedding = get_cached_embedding(keyword)
+                        if embedding is not None and isinstance(embedding, np.ndarray):
+                            keyword_embeddings[keyword] = embedding
+                        progress_bar.progress((i + 1) / len(keywords))
+                    
+                    if keyword_embeddings:
+                        # Calculate average cluster embedding
+                        embedding_to_use = np.mean(list(keyword_embeddings.values()), axis=0)
+                        st.success(f"Generated cluster embedding from {len(keyword_embeddings)} keywords")
+                        
+                        # Show cluster details
+                        with st.expander("Cluster Details"):
+                            st.write(f"Cluster Name: {cluster_name}")
+                            st.write(f"Number of Keywords: {len(keyword_embeddings)}")
+                            st.write("Keywords used:")
+                            for keyword in keyword_embeddings.keys():
+                                st.write(f"- {keyword}")
+                    else:
+                        st.error("Failed to generate embeddings for any keywords")
+                        embedding_to_use = None
             else:
-                # Get the current page embedding from tab 2
-                try:
-                    current_page_embedding = np.mean(section_embeddings, axis=0)
-                    if current_page_embedding is None or current_page_embedding.size == 0:
-                        st.error("Failed to calculate average embedding for the current page.")
-                        st.stop()
-                except Exception as e:
-                    st.error(f"Error calculating average embedding: {str(e)}")
-                    st.stop()
-                
-                # Store results for each URL
-                url_results = []
-                
-                # Process each URL
-                with st.spinner(f"Analyzing {len(urls)} URLs..."):
-                    for url in urls:
-                        try:
-                            # Scrape and analyze the URL
-                            sections = scrape_webpage(url)
-                            if not sections:
-                                st.warning(f"Could not scrape content from {url}")
-                                continue
-                                
-                            # Generate embeddings for all sections in batches
-                            section_texts = [section['text'] for section in sections]
-                            embeddings = get_cached_embedding(section_texts, batch_size=5)
-                            
-                            if embeddings is None:
-                                st.warning(f"""
-                                Could not generate embeddings for {url}. This could be due to:
-                                1. Vertex AI quota limits - Please try again later
-                                2. Invalid content - Please check if the webpage has valid text content
-                                """)
-                                continue
-                            
-                            section_embeddings_url = embeddings if isinstance(embeddings, list) else [embeddings]
-                            
-                            try:
-                                # Calculate weighted similarity across all sections
-                                weighted_similarity, detailed_scores, metrics = calculate_weighted_similarity(
-                                    sections_with_embeddings, 
-                                    current_page_embedding
-                                )
-                                
-                                url_results.append({
-                                    'url': url,
-                                    'weighted_similarity': weighted_similarity,
-                                    'raw_avg_similarity': metrics['raw_avg'],
-                                    'raw_max_similarity': metrics['raw_max'],
-                                    'raw_min_similarity': metrics['raw_min'],
-                                    'similarity_std_dev': metrics['std_dev'],
-                                    'sections_count': metrics['section_count'],
-                                    'most_similar_section': detailed_scores[0]['heading'] if detailed_scores else 'No heading',
-                                    'most_similar_text': detailed_scores[0]['text_preview'] if detailed_scores else '',
-                                    'detailed_scores': detailed_scores
-                                })
-                            except Exception as e:
-                                st.warning(f"Error processing embeddings for {url}: {str(e)}")
-                                continue
-                                
-                        except Exception as e:
-                            st.warning(f"Error processing {url}: {str(e)}")
+                st.warning("Please enter at least one keyword")
+                embedding_to_use = None
+        else:
+            st.info("Please enter both cluster name and keywords")
+            embedding_to_use = None
+    
+    # Get URLs input
+    urls_input = st.text_area(
+        "Enter URLs to analyze (one per line):",
+        height=150,
+        placeholder="https://example1.com\nhttps://example2.com\nhttps://example3.com",
+        key="tab2_urls_input"
+    )
+    
+    if urls_input and embedding_to_use is not None:
+        # Process URLs
+        urls = [url.strip() for url in urls_input.split('\n') if url.strip()]
+        
+        if not urls:
+            st.warning("Please enter at least one valid URL to analyze.")
+        else:
+            # Store results for each URL
+            url_results = []
+            
+            # Process each URL
+            with st.spinner(f"Analyzing {len(urls)} URLs..."):
+                for url in urls:
+                    try:
+                        # Scrape and analyze the URL
+                        sections = scrape_webpage(url)
+                        if not sections:
+                            st.warning(f"Could not scrape content from {url}")
                             continue
+                            
+                        # Generate embeddings for all sections
+                        section_texts = [section['text'] for section in sections]
+                        embeddings = get_cached_embedding(section_texts, batch_size=5)
+                        
+                        if embeddings is None:
+                            st.warning(f"""
+                            Could not generate embeddings for {url}. This could be due to:
+                            1. Vertex AI quota limits - Please try again later
+                            2. Invalid content - Please check if the webpage has valid text content
+                            """)
+                            continue
+                        
+                        try:
+                            # Calculate weighted similarity across all sections
+                            weighted_similarity, detailed_scores, metrics = calculate_weighted_similarity(
+                                sections_with_embeddings, 
+                                embedding_to_use
+                            )
+                            
+                            url_results.append({
+                                'url': url,
+                                'weighted_similarity': weighted_similarity,
+                                'raw_avg_similarity': metrics['raw_avg'],
+                                'raw_max_similarity': metrics['raw_max'],
+                                'raw_min_similarity': metrics['raw_min'],
+                                'similarity_std_dev': metrics['std_dev'],
+                                'sections_count': metrics['section_count'],
+                                'most_similar_section': detailed_scores[0]['heading'] if detailed_scores else 'No heading',
+                                'most_similar_text': detailed_scores[0]['text_preview'] if detailed_scores else '',
+                                'detailed_scores': detailed_scores
+                            })
+                        except Exception as e:
+                            st.warning(f"Error processing embeddings for {url}: {str(e)}")
+                            continue
+                            
+                    except Exception as e:
+                        st.warning(f"Error processing {url}: {str(e)}")
+                        continue
+            
+            if url_results:
+                # Sort URLs by similarity
+                url_results.sort(key=lambda x: x['weighted_similarity'], reverse=True)
                 
-                if url_results:
-                    # Sort URLs by similarity
-                    url_results.sort(key=lambda x: x['weighted_similarity'], reverse=True)
-                    
-                    # Display overall results
-                    st.subheader("Comparison Results")
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric(
-                            label="Average Weighted Similarity",
-                            value=f"{np.mean([r['weighted_similarity'] for r in url_results]):.3f}",
-                            help="Weighted average similarity between the keyword and all analyzed URLs"
-                        )
-                    with col2:
-                        st.metric(
-                            label="Highest Similarity",
-                            value=f"{np.max([r['raw_max_similarity'] for r in url_results]):.3f}",
-                            help="Highest similarity score found across all URLs"
-                        )
-                    with col3:
-                        st.metric(
-                            label="Average Std Dev",
-                            value=f"{np.mean([r['similarity_std_dev'] for r in url_results]):.3f}",
-                            help="Average standard deviation of similarity scores"
-                        )
-                    
-                    # Display top 3 most similar URLs
-                    st.subheader("Most Similar URLs")
-                    for i, result in enumerate(url_results[:3], 1):
-                        st.markdown(f"""
-                        **{i}. {result['url']}**  
-                        Weighted Similarity: {result['weighted_similarity']:.3f}  
-                        Raw Average: {result['raw_avg_similarity']:.3f}  
-                        Raw Max: {result['raw_max_similarity']:.3f}  
-                        Raw Min: {result['raw_min_similarity']:.3f}  
-                        Std Dev: {result['similarity_std_dev']:.3f}  
-                        Sections analyzed: {result['sections_count']}  
-                        Most similar section: {result['most_similar_section']}  
-                        Preview: {result['most_similar_text']}
-                        """)
+                # Display overall results
+                st.subheader("Comparison Results")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric(
+                        label="Average Weighted Similarity",
+                        value=f"{np.mean([r['weighted_similarity'] for r in url_results]):.3f}",
+                        help="Weighted average similarity between the keyword and all analyzed URLs"
+                    )
+                with col2:
+                    st.metric(
+                        label="Highest Similarity",
+                        value=f"{np.max([r['raw_max_similarity'] for r in url_results]):.3f}",
+                        help="Highest similarity score found across all URLs"
+                    )
+                with col3:
+                    st.metric(
+                        label="Average Std Dev",
+                        value=f"{np.mean([r['similarity_std_dev'] for r in url_results]):.3f}",
+                        help="Average standard deviation of similarity scores"
+                    )
+                
+                # Display top 3 most similar URLs
+                st.subheader("Most Similar URLs")
+                for i, result in enumerate(url_results[:3], 1):
+                    st.markdown(f"""
+                    **{i}. {result['url']}**  
+                    Weighted Similarity: {result['weighted_similarity']:.3f}  
+                    Raw Average: {result['raw_avg_similarity']:.3f}  
+                    Raw Max: {result['raw_max_similarity']:.3f}  
+                    Raw Min: {result['raw_min_similarity']:.3f}  
+                    Std Dev: {result['similarity_std_dev']:.3f}  
+                    Sections analyzed: {result['sections_count']}  
+                    Most similar section: {result['most_similar_section']}  
+                    Preview: {result['most_similar_text']}
+                    """)
                         
                         # Show detailed scores for top sections
                         if result['detailed_scores']:
@@ -2143,7 +1989,7 @@ with tab4:
     else:
         st.warning("Please enter at least one URL to analyze.")
 
-with tab5:
+with tab3:
     st.subheader("Compare Multiple URLs")
     st.markdown("""
     Enter a keyword and up to 10 URLs to compare their similarity to the keyword.
@@ -2157,7 +2003,7 @@ with tab5:
     keyword_input = st.text_input(
         "Enter keyword:",
         placeholder="Enter your keyword here...",
-        key="tab5_keyword_input"  # Added unique key
+        key="tab3_keyword_input"
     )
     
     # Get URLs input
@@ -2165,7 +2011,7 @@ with tab5:
         "Enter URLs to compare (one per line, max 10):",
         height=150,
         placeholder="https://example1.com\nhttps://example2.com\nhttps://example3.com",
-        key="tab5_urls_input"  # Added unique key
+        key="tab3_urls_input"
     )
     
     if keyword_input and urls_input:
@@ -2277,19 +2123,19 @@ with tab5:
                     Most similar section: {result['most_similar_section']}  
                     Preview: {result['most_similar_text']}
                     """)
-                    
-                    # Show detailed scores for top sections
-                    if result['detailed_scores']:
-                        st.markdown("**Top 3 Most Similar Sections:**")
-                        for j, score in enumerate(result['detailed_scores'][:3], 1):
-                            st.markdown(f"""
-                            {j}. {score['heading']}  
-                            Similarity: {score['similarity']:.3f}  
-                            Weight: {score['weight']:.3f}  
-                            Length: {score['length']} words  
-                            Preview: {score['text_preview']}
-                            """)
-            
+                        
+                        # Show detailed scores for top sections
+                        if result['detailed_scores']:
+                            st.markdown("**Top 3 Most Similar Sections:**")
+                            for j, score in enumerate(result['detailed_scores'][:3], 1):
+                                st.markdown(f"""
+                                {j}. {score['heading']}  
+                                Similarity: {score['similarity']:.3f}  
+                                Weight: {score['weight']:.3f}  
+                                Length: {score['length']} words  
+                                Preview: {score['text_preview']}
+                                """)
+                
                 # Display all URLs in a table
                 st.subheader("All URL Similarities")
                 df = pd.DataFrame(url_results)
