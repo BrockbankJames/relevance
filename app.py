@@ -348,15 +348,26 @@ with tab3:
     
     if urls_input:
         # Check if we have a webpage analyzed in tab 2
-        if 'url_input' not in locals() or not url_input or 'section_embeddings' not in locals() or not section_embeddings:
+        if 'url_input' not in locals() or not url_input:
             st.warning("Please analyze a webpage in the 'Webpage Analysis' tab first.")
+        elif 'section_embeddings' not in locals() or not section_embeddings:
+            st.warning("No valid embeddings found for the analyzed webpage. Please try analyzing the webpage again.")
         else:
             # Process URLs
             urls = [url.strip() for url in urls_input.split('\n') if url.strip()]
             
-            if urls:
+            if not urls:
+                st.warning("Please enter at least one valid URL to analyze.")
+            else:
                 # Get the current page embedding from tab 2
-                current_page_embedding = np.mean(section_embeddings, axis=0)
+                try:
+                    current_page_embedding = np.mean(section_embeddings, axis=0)
+                    if current_page_embedding is None or current_page_embedding.size == 0:
+                        st.error("Failed to calculate average embedding for the current page.")
+                        st.stop()
+                except Exception as e:
+                    st.error(f"Error calculating average embedding: {str(e)}")
+                    st.stop()
                 
                 # Store results for each URL
                 url_results = []
@@ -367,22 +378,34 @@ with tab3:
                         try:
                             # Scrape and analyze the URL
                             sections = scrape_webpage(url)
-                            if sections:
-                                # Generate embeddings for all sections
-                                section_embeddings_url = []
-                                for section in sections:
-                                    embedding = get_embedding(section['text'])
-                                    section_embeddings_url.append(embedding)
+                            if not sections:
+                                st.warning(f"Could not scrape content from {url}")
+                                continue
                                 
+                            # Generate embeddings for all sections
+                            section_embeddings_url = []
+                            for section in sections:
+                                embedding = get_embedding(section['text'])
+                                if embedding is not None:
+                                    section_embeddings_url.append(embedding)
+                            
+                            if not section_embeddings_url:
+                                st.warning(f"Could not generate embeddings for {url}")
+                                continue
+                                
+                            try:
                                 # Average section embeddings
                                 avg_section_embedding = np.mean(section_embeddings_url, axis=0)
-                                
+                                if avg_section_embedding is None or avg_section_embedding.size == 0:
+                                    st.warning(f"Failed to calculate average embedding for {url}")
+                                    continue
+                                    
                                 # Calculate similarity with current page
                                 similarity = calculate_similarity(current_page_embedding, avg_section_embedding)
                                 
                                 # Calculate query similarity if keyword exists
                                 query_similarity = None
-                                if 'keyword_embedding' in locals():
+                                if 'keyword_embedding' in locals() and keyword_embedding is not None:
                                     query_similarity = calculate_similarity(keyword_embedding, avg_section_embedding)
                                 
                                 url_results.append({
@@ -391,64 +414,72 @@ with tab3:
                                     'query_similarity': query_similarity,
                                     'sections_count': len(sections)
                                 })
+                            except Exception as e:
+                                st.warning(f"Error processing embeddings for {url}: {str(e)}")
+                                continue
+                                
                         except Exception as e:
                             st.warning(f"Error processing {url}: {str(e)}")
+                            continue
                 
                 if url_results:
                     # Sort URLs by similarity to current page
                     url_results.sort(key=lambda x: x['similarity'], reverse=True)
                     
                     # Calculate average similarity
-                    avg_similarity = np.mean([r['similarity'] for r in url_results])
-                    
-                    # Display overall results
-                    st.subheader("Similarity Results")
-                    st.metric(
-                        label="Average Similarity to Analyzed Webpage",
-                        value=f"{avg_similarity:.3f}",
-                        help="Average similarity between the analyzed webpage and all URLs"
-                    )
-                    
-                    # Display top 3 most similar URLs
-                    st.subheader("Most Similar URLs")
-                    for i, result in enumerate(url_results[:3], 1):
-                        st.markdown(f"""
-                        **{i}. {result['url']}**  
-                        Similarity: {result['similarity']:.3f}  
-                        Sections analyzed: {result['sections_count']}
-                        """)
-                    
-                    # Display all URLs in a table
-                    st.subheader("All URL Similarities")
-                    df = pd.DataFrame(url_results)
-                    df['similarity'] = df['similarity'].round(3)
-                    if 'query_similarity' in df.columns:
-                        df['query_similarity'] = df['query_similarity'].round(3)
-                    
-                    # Rename columns
-                    column_rename = {
-                        'url': 'URL',
-                        'similarity': 'Similarity to Webpage',
-                        'sections_count': 'Sections Analyzed'
-                    }
-                    if 'query_similarity' in df.columns:
-                        column_rename['query_similarity'] = 'Query Similarity'
-                    
-                    df = df.rename(columns=column_rename)
-                    st.dataframe(df, use_container_width=True)
-                    
-                    # Add download button for results
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="Download Analysis Results as CSV",
-                        data=csv,
-                        file_name="url_analysis.csv",
-                        mime="text/csv"
-                    )
+                    try:
+                        avg_similarity = np.mean([r['similarity'] for r in url_results])
+                        
+                        # Display overall results
+                        st.subheader("Similarity Results")
+                        st.metric(
+                            label="Average Similarity to Analyzed Webpage",
+                            value=f"{avg_similarity:.3f}",
+                            help="Average similarity between the analyzed webpage and all URLs"
+                        )
+                        
+                        # Display top 3 most similar URLs
+                        st.subheader("Most Similar URLs")
+                        for i, result in enumerate(url_results[:3], 1):
+                            st.markdown(f"""
+                            **{i}. {result['url']}**  
+                            Similarity: {result['similarity']:.3f}  
+                            Sections analyzed: {result['sections_count']}
+                            """)
+                        
+                        # Display all URLs in a table
+                        st.subheader("All URL Similarities")
+                        df = pd.DataFrame(url_results)
+                        df['similarity'] = df['similarity'].round(3)
+                        if 'query_similarity' in df.columns:
+                            df['query_similarity'] = df['query_similarity'].round(3)
+                        
+                        # Rename columns
+                        column_rename = {
+                            'url': 'URL',
+                            'similarity': 'Similarity to Webpage',
+                            'sections_count': 'Sections Analyzed'
+                        }
+                        if 'query_similarity' in df.columns:
+                            column_rename['query_similarity'] = 'Query Similarity'
+                        
+                        df = df.rename(columns=column_rename)
+                        st.dataframe(df, use_container_width=True)
+                        
+                        # Add download button for results
+                        csv = df.to_csv(index=False)
+                        st.download_button(
+                            label="Download Analysis Results as CSV",
+                            data=csv,
+                            file_name="url_analysis.csv",
+                            mime="text/csv"
+                        )
+                    except Exception as e:
+                        st.error(f"Error calculating or displaying results: {str(e)}")
                 else:
                     st.error("No URLs were successfully analyzed. Please check the URLs and try again.")
-            else:
-                st.warning("Please enter at least one URL to analyze.")
+    else:
+        st.warning("Please enter at least one URL to analyze.")
 
 # Add footer
 st.markdown("---")
