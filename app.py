@@ -849,6 +849,14 @@ def scrape_webpage(url):
                             # Create soup object and log initial structure
                             soup = BeautifulSoup(content_html, 'html.parser')
                             
+                            # Ensure we have a valid body element
+                            body = soup.find('body')
+                            if not body:
+                                debug_log("No body element found, creating one")
+                                body = soup.new_tag('body')
+                                body.append(soup)
+                                soup = BeautifulSoup(str(body), 'html.parser')
+                            
                             # Log all header, footer, and nav elements found
                             debug_log("\nSearching for unwanted elements...")
                             header_elements = soup.find_all('header')
@@ -859,52 +867,85 @@ def scrape_webpage(url):
                             debug_log(f"Found {len(footer_elements)} footer elements")
                             debug_log(f"Found {len(nav_elements)} nav elements")
                             
-                            # Log details of each unwanted element
-                            for tag_list, tag_name in [(header_elements, 'header'), 
-                                                      (footer_elements, 'footer'), 
-                                                      (nav_elements, 'nav')]:
-                                for j, tag in enumerate(tag_list):
-                                    debug_log(f"\n{tag_name.capitalize()} element {j+1}:")
-                                    debug_log(f"HTML: {tag.prettify()[:500]}")
-                                    debug_log(f"Text content: {tag.get_text().strip()[:200]}")
-                                    debug_log(f"Parent: {tag.parent.name if tag.parent else 'None'}")
-                                    debug_log(f"Classes: {tag.get('class', [])}")
-                                    debug_log(f"ID: {tag.get('id', 'None')}")
-                            
                             # Remove all unwanted elements
                             for tag in header_elements + footer_elements + nav_elements:
-                                debug_log(f"\nRemoving {tag.name} element:")
-                                debug_log(f"Content: {tag.get_text().strip()[:200]}")
-                                tag.decompose()
+                                if tag and tag.parent:  # Check if tag exists and has a parent
+                                    debug_log(f"\nRemoving {tag.name} element:")
+                                    debug_log(f"Content: {tag.get_text().strip()[:200]}")
+                                    tag.decompose()
                             
-                            # Verify removal
-                            remaining_unwanted = soup.find_all(['header', 'footer', 'nav'])
-                            if remaining_unwanted:
-                                debug_log(f"\nWARNING: Found {len(remaining_unwanted)} remaining unwanted elements!")
-                                for j, tag in enumerate(remaining_unwanted):
-                                    debug_log(f"Remaining {tag.name} {j+1}: {tag.prettify()[:200]}")
-                            else:
-                                debug_log("\nAll unwanted elements successfully removed")
+                            # Get all text content from the body
+                            content_elements = []
+                            for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'article', 'section', 'div']):
+                                if element and element.parent:  # Check if element exists and has a parent
+                                    # Skip elements that are part of navigation
+                                    if element.get('class'):
+                                        classes = element.get('class', [])
+                                        if any(
+                                            class_name.lower() in ['nav', 'navigation', 'navbar', 'navbar-nav', 'nav-menu', 'nav-wrapper', 'nav-container']
+                                            or element.get('role') == 'navigation'
+                                            or element.get('aria-label', '').lower() in ['navigation', 'main navigation', 'primary navigation']
+                                            or element.get('id', '').lower() in ['nav', 'navigation', 'navbar', 'main-nav', 'primary-nav']
+                                            for class_name in classes
+                                        ):
+                                            continue
+                                    
+                                    text = element.get_text().strip()
+                                    if text and len(text.split()) > 2:  # Skip very short text
+                                        content_elements.append({
+                                            'type': element.name,
+                                            'text': text,
+                                            'heading': element.name.startswith('h') and text or None
+                                        })
                             
-                            # Get the cleaned HTML
-                            cleaned_html = str(soup)
-                            if cleaned_html.strip():
-                                processed_content.append(cleaned_html)
-                                debug_log(f"\nAdded processed content block {i+1}, length: {len(cleaned_html)}")
-                                debug_log("First 500 characters of cleaned content:")
-                                debug_log(cleaned_html[:500])
+                            if content_elements:
+                                # Create sections from content elements
+                                sections = []
+                                current_section = None
+                                
+                                for element in content_elements:
+                                    if element['type'].startswith('h'):  # This is a heading
+                                        if current_section:
+                                            sections.append(current_section)
+                                        current_section = {
+                                            'type': element['type'],
+                                            'heading': element['text'],
+                                            'text': element['text'],
+                                            'content': []
+                                        }
+                                    elif current_section:
+                                        current_section['content'].append(element['text'])
+                                        current_section['text'] = f"{current_section['heading']} {' '.join(current_section['content'])}"
+                                    else:
+                                        # Create a default section for content before first heading
+                                        current_section = {
+                                            'type': 'content',
+                                            'heading': 'Content Section',
+                                            'text': element['text'],
+                                            'content': [element['text']]
+                                        }
+                                
+                                if current_section:
+                                    sections.append(current_section)
+                                
+                                if sections:
+                                    processed_content.extend(sections)
+                                    debug_log(f"\nExtracted {len(sections)} sections from content block {i+1}")
+                                else:
+                                    debug_log(f"\nNo sections found in content block {i+1}")
                             
                         except Exception as e:
                             debug_log(f"Error processing content block {i+1}: {str(e)}")
+                            debug_log(f"Error type: {type(e)}")
+                            debug_log(f"Full error: {repr(e)}")
                             continue
                     
-                    # Update the data with processed content
-                    data['main_content'] = processed_content
-                    debug_log(f"\nProcessed {len(processed_content)} content blocks")
-                    
-                    # Now extract sections from the cleaned content
-                    sections = extract_sections_from_json(json.dumps(data))
-                    
+                    if processed_content:
+                        debug_log(f"\nSuccessfully processed {len(processed_content)} total sections")
+                        return processed_content
+                    else:
+                        debug_log("\nNo content sections found after processing")
+                        return None
                 else:
                     debug_log("No main_content found in JSON response")
                     return None
@@ -916,30 +957,85 @@ def scrape_webpage(url):
                 return None
         else:
             debug_log("Processing HTML response...")
-            # For direct HTML responses, create soup and remove unwanted elements
-            soup = BeautifulSoup(response.content, 'html.parser')
-            for tag in soup.find_all(['header', 'footer', 'nav']):
-                tag.decompose()
-            sections = extract_sections(str(soup))
-        
-        if not sections:
-            st.warning("""
-            No content sections found on the page. This could be because:
-            1. The page is blocking access
-            2. The page has no text content
-            3. The page structure is different than expected
-            
-            Try using a different URL or check if the page is accessible.
-            """)
-            debug_log("\nRaw response content:")
-            debug_log(response.text[:1000] + "...")
-            return None
-        
-        return sections
+            # For direct HTML responses, create soup and process content
+            try:
+                soup = BeautifulSoup(response.content, 'html.parser')
+                body = soup.find('body')
+                if not body:
+                    debug_log("No body element found in direct HTML response")
+                    return None
+                
+                # Process content using the same logic as above
+                content_elements = []
+                for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'article', 'section', 'div']):
+                    if element and element.parent:
+                        # Skip navigation elements
+                        if element.get('class'):
+                            classes = element.get('class', [])
+                            if any(
+                                class_name.lower() in ['nav', 'navigation', 'navbar', 'navbar-nav', 'nav-menu', 'nav-wrapper', 'nav-container']
+                                or element.get('role') == 'navigation'
+                                or element.get('aria-label', '').lower() in ['navigation', 'main navigation', 'primary navigation']
+                                or element.get('id', '').lower() in ['nav', 'navigation', 'navbar', 'main-nav', 'primary-nav']
+                                for class_name in classes
+                            ):
+                                continue
+                        
+                        text = element.get_text().strip()
+                        if text and len(text.split()) > 2:
+                            content_elements.append({
+                                'type': element.name,
+                                'text': text,
+                                'heading': element.name.startswith('h') and text or None
+                            })
+                
+                if content_elements:
+                    # Create sections from content elements
+                    sections = []
+                    current_section = None
+                    
+                    for element in content_elements:
+                        if element['type'].startswith('h'):
+                            if current_section:
+                                sections.append(current_section)
+                            current_section = {
+                                'type': element['type'],
+                                'heading': element['text'],
+                                'text': element['text'],
+                                'content': []
+                            }
+                        elif current_section:
+                            current_section['content'].append(element['text'])
+                            current_section['text'] = f"{current_section['heading']} {' '.join(current_section['content'])}"
+                        else:
+                            current_section = {
+                                'type': 'content',
+                                'heading': 'Content Section',
+                                'text': element['text'],
+                                'content': [element['text']]
+                            }
+                    
+                    if current_section:
+                        sections.append(current_section)
+                    
+                    if sections:
+                        debug_log(f"\nExtracted {len(sections)} sections from direct HTML")
+                        return sections
+                
+                debug_log("\nNo content sections found in direct HTML")
+                return None
+                
+            except Exception as e:
+                debug_log(f"Error processing direct HTML: {str(e)}")
+                debug_log(f"Error type: {type(e)}")
+                debug_log(f"Full error: {repr(e)}")
+                return None
         
     except Exception as e:
         st.error(f"Error scraping webpage: {str(e)}")
         debug_log(f"Scraping error details: {str(e)}")
+        debug_log(f"Error type: {type(e)}")
+        debug_log(f"Full error: {repr(e)}")
         return None
 
 def calculate_similarity(embedding1, embedding2):
