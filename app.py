@@ -1138,6 +1138,3 @@ with tab3:
 # Add footer
 st.markdown("---")
 st.markdown("Built with Streamlit and Google's Vertex AI text-embedding-005 model") 
-# Add footer
-st.markdown("---")
-st.markdown("Built with Streamlit and Google's Vertex AI text-embedding-005 model") 
