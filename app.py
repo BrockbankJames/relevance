@@ -510,6 +510,7 @@ def extract_sections_from_json(json_data):
     """Extract sections from ScrapingBee JSON response, maintaining proper heading hierarchy"""
     debug_log("Processing JSON response...")
     sections = []
+    header_footer_content = set()  # Define at function level
     
     try:
         data = json.loads(json_data)
@@ -519,9 +520,28 @@ def extract_sections_from_json(json_data):
             debug_log("Processing main content HTML...")
             debug_log(f"Number of main_content items: {len(data['main_content'])}")
             
+            # First pass: collect all header/footer content
             for i, content_html in enumerate(data['main_content']):
                 if not content_html:
                     debug_log(f"Skipping empty content_html at index {i}")
+                    continue
+                    
+                try:
+                    soup = BeautifulSoup(content_html, 'html.parser')
+                    # Collect header/footer content before removing elements
+                    for tag in soup.find_all(['header', 'footer']):
+                        for text in tag.stripped_strings:
+                            header_footer_content.add(text.strip())
+                        debug_log(f"Marked content from {tag.name}: {tag.get_text()[:200]}")
+                except Exception as e:
+                    debug_log(f"Error collecting header/footer content from block {i+1}: {str(e)}")
+                    continue
+            
+            debug_log(f"Collected {len(header_footer_content)} header/footer content items")
+            
+            # Second pass: process content
+            for i, content_html in enumerate(data['main_content']):
+                if not content_html:
                     continue
                     
                 debug_log(f"\nProcessing content_html {i+1}:")
@@ -530,13 +550,9 @@ def extract_sections_from_json(json_data):
                 try:
                     soup = BeautifulSoup(content_html, 'html.parser')
                     
-                    # First, identify and mark header/footer content
-                    header_footer_content = set()
+                    # Remove header and footer elements
                     for tag in soup.find_all(['header', 'footer']):
-                        # Get all text content within header/footer
-                        for text in tag.stripped_strings:
-                            header_footer_content.add(text.strip())
-                        debug_log(f"Marked content from {tag.name}: {tag.get_text()[:200]}")
+                        debug_log(f"Removing {tag.name} element and its contents")
                         tag.decompose()
                     
                     # Find all heading tags to establish hierarchy
@@ -547,7 +563,7 @@ def extract_sections_from_json(json_data):
                     current_section = None
                     current_h3_content = []
                     
-                    for i, heading in enumerate(headings):
+                    for heading in headings:
                         # Get heading text
                         heading_text = heading.get_text().strip()
                         if not heading_text:
@@ -647,39 +663,47 @@ def extract_sections_from_json(json_data):
                     
                 except Exception as e:
                     debug_log(f"Error processing content_html {i+1}: {str(e)}")
+                    debug_log(f"Error type: {type(e)}")
+                    debug_log(f"Full error: {repr(e)}")
                     continue
         
         # If no sections found, try to get content from the JSON data
-        if not sections and 'paragraphs' in data and isinstance(data['paragraphs'], list):
+        if not sections and 'main_content' in data and data['main_content']:
             debug_log("\nNo sections found with headings, trying content from JSON...")
-            # Create a temporary soup to extract all content
-            temp_soup = BeautifulSoup(''.join(data['main_content']), 'html.parser')
-            
-            # Remove header/footer elements
-            for tag in temp_soup.find_all(['header', 'footer']):
-                tag.decompose()
-            
-            # Get all text content from the body
-            body = temp_soup.find('body')
-            if body:
-                # Get all text nodes and elements
-                content_elements = []
-                for element in body.descendants:
-                    if element.name and element.name not in ['script', 'style', 'meta', 'link']:
-                        text = element.get_text().strip()
-                        if text and len(text.split()) > 2:  # Skip very short text
-                            content_elements.append(text)
+            try:
+                # Create a temporary soup from all main content
+                temp_soup = BeautifulSoup(''.join(data['main_content']), 'html.parser')
                 
-                if content_elements:
-                    # Create a single section with all content
-                    sections.append({
-                        'type': 'content',
-                        'heading': 'Content Section',
-                        'text': ' '.join(content_elements),
-                        'content': content_elements,
-                        'subsections': []
-                    })
-                    debug_log(f"Added content section with {len(content_elements)} elements")
+                # Remove header/footer elements
+                for tag in temp_soup.find_all(['header', 'footer']):
+                    tag.decompose()
+                
+                # Get all text content from the body
+                body = temp_soup.find('body')
+                if body:
+                    # Get all text nodes and elements
+                    content_elements = []
+                    for element in body.descendants:
+                        if element.name and element.name not in ['script', 'style', 'meta', 'link']:
+                            text = element.get_text().strip()
+                            if text and len(text.split()) > 2 and text not in header_footer_content:  # Skip very short text and header/footer content
+                                content_elements.append(text)
+                                debug_log(f"Found content element: {text[:100]}")
+                    
+                    if content_elements:
+                        # Create a single section with all content
+                        sections.append({
+                            'type': 'content',
+                            'heading': 'Content Section',
+                            'text': ' '.join(content_elements),
+                            'content': content_elements,
+                            'subsections': []
+                        })
+                        debug_log(f"Added content section with {len(content_elements)} elements")
+            except Exception as e:
+                debug_log(f"Error processing fallback content: {str(e)}")
+                debug_log(f"Error type: {type(e)}")
+                debug_log(f"Full error: {repr(e)}")
         
         # Final check to remove any sections that might have header/footer content
         filtered_sections = []
@@ -1457,7 +1481,7 @@ with tab3:
                             continue
                 
                 if url_results:
-                    # Sort URLs by similarity to current page
+                    # Sort URLs by similarity
                     url_results.sort(key=lambda x: x['weighted_similarity'], reverse=True)
                     
                     # Display overall results
