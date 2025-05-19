@@ -49,6 +49,18 @@ def init_vertex_ai():
     try:
         debug_log("Starting Vertex AI initialization...")
         
+        # Get project and location first
+        project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
+        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'europe-west1')
+        debug_log(f"Initial location from secrets: {location}")
+        
+        # Validate location
+        if location not in SUPPORTED_REGIONS:
+            st.error(f"Unsupported region in secrets: {location}. Using default: europe-west1")
+            location = 'europe-west1'
+        
+        debug_log(f"Using location: {location}")
+        
         # Try to get credentials from Streamlit secrets
         if 'GOOGLE_APPLICATION_CREDENTIALS_JSON' in st.secrets:
             debug_log("Found credentials in Streamlit secrets")
@@ -73,28 +85,26 @@ def init_vertex_ai():
                 st.error(f"Error getting default credentials: {str(e)}")
                 return False
         
-        # Get project and location
-        project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
-        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'europe-west1')  # Changed default to europe-west1
-        
-        # Validate location
-        if location not in SUPPORTED_REGIONS:
-            st.error(f"Unsupported region: {location}. Please use one of: {', '.join(sorted(SUPPORTED_REGIONS))}")
-            return False
-            
-        debug_log(f"Using project: {project_id}, location: {location}")
+        debug_log(f"Final configuration - Project: {project_id}, Location: {location}")
         
         # Initialize Vertex AI
         debug_log("Initializing Vertex AI...")
-        aiplatform.init(
-            credentials=credentials,
-            project=project_id,
-            location=location
-        )
-        debug_log("Vertex AI initialization complete!")
-        return True
+        try:
+            aiplatform.init(
+                credentials=credentials,
+                project=project_id,
+                location=location
+            )
+            debug_log("Vertex AI initialization complete!")
+            return True
+        except Exception as e:
+            st.error(f"Error during Vertex AI initialization: {str(e)}")
+            debug_log(f"Initialization error details: {str(e)}")
+            return False
+            
     except Exception as e:
-        st.error(f"Error initializing Vertex AI: {str(e)}")
+        st.error(f"Error in init_vertex_ai: {str(e)}")
+        debug_log(f"Full error details: {str(e)}")
         st.info("""
         Please make sure you have set up the following in your Streamlit secrets:
         1. GOOGLE_APPLICATION_CREDENTIALS_JSON: Your service account key JSON
@@ -105,6 +115,7 @@ def init_vertex_ai():
         - GOOGLE_APPLICATION_CREDENTIALS_JSON: {'present': 'GOOGLE_APPLICATION_CREDENTIALS_JSON' in st.secrets}
         - GOOGLE_CLOUD_PROJECT: {'present': 'GOOGLE_CLOUD_PROJECT' in st.secrets}
         - GOOGLE_CLOUD_LOCATION: {'present': 'GOOGLE_CLOUD_LOCATION' in st.secrets}
+        - Current location value: {location}
         """)
         return False
 
@@ -124,7 +135,8 @@ def get_embedding(text):
         
         # Get project and location from secrets
         project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
-        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'europe-west1')  # Changed default to europe-west1
+        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'europe-west1')
+        debug_log(f"Location from secrets in get_embedding: {location}")
         
         if not project_id:
             st.error("GOOGLE_CLOUD_PROJECT not found in secrets")
@@ -132,8 +144,10 @@ def get_embedding(text):
             
         # Validate location
         if location not in SUPPORTED_REGIONS:
-            st.error(f"Unsupported region: {location}. Please use one of: {', '.join(sorted(SUPPORTED_REGIONS))}")
-            return None
+            debug_log(f"Invalid location {location}, using default: europe-west1")
+            location = 'europe-west1'
+            
+        debug_log(f"Using location in get_embedding: {location}")
             
         # Initialize the model
         debug_log("Initializing model...")
@@ -141,21 +155,37 @@ def get_embedding(text):
         model_endpoint = f"projects/{project_id}/locations/{location}/publishers/google/models/textembedding-gecko@001"
         debug_log(f"Using model endpoint: {model_endpoint}")
         
-        model = aiplatform.Model(model_endpoint)
-        debug_log("Model initialized successfully")
+        try:
+            model = aiplatform.Model(model_endpoint)
+            debug_log("Model initialized successfully")
+        except Exception as e:
+            st.error(f"Error initializing model: {str(e)}")
+            debug_log(f"Model initialization error details: {str(e)}")
+            return None
         
         # Get embeddings
         debug_log("Getting embeddings...")
-        response = model.predict([text])
-        debug_log("Embeddings generated successfully")
+        try:
+            response = model.predict([text])
+            debug_log("Embeddings generated successfully")
+        except Exception as e:
+            st.error(f"Error getting embeddings: {str(e)}")
+            debug_log(f"Embedding generation error details: {str(e)}")
+            return None
         
         # Extract the embedding from the response
-        embedding = np.array(response.predictions[0])
-        debug_log(f"Embedding shape: {embedding.shape}")
-        return embedding
+        try:
+            embedding = np.array(response.predictions[0])
+            debug_log(f"Embedding shape: {embedding.shape}")
+            return embedding
+        except Exception as e:
+            st.error(f"Error processing embedding response: {str(e)}")
+            debug_log(f"Response processing error details: {str(e)}")
+            return None
+            
     except Exception as e:
-        st.error(f"Error generating embedding: {str(e)}")
-        debug_log(f"Error details: {str(e)}")
+        st.error(f"Error in get_embedding: {str(e)}")
+        debug_log(f"Full error details: {str(e)}")
         return None
 
 def scrape_webpage(url):
