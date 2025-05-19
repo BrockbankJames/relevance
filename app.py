@@ -1389,10 +1389,10 @@ with tab2:
                     st.stop()
                 
                 # Extract embeddings from sections
-                section_embeddings = [section['embedding'] for section in sections_with_embeddings]
+                section_embeddings = [section['embedding'] for section in sections_with_embeddings if 'embedding' in section and isinstance(section['embedding'], np.ndarray)]
             
             # If we have a keyword embedding from tab1, calculate similarity
-            if 'keyword_embedding' in locals() and keyword_embedding is not None:
+            if 'keyword_embedding' in locals() and isinstance(keyword_embedding, np.ndarray):
                 st.subheader("Similarity Analysis")
                 
                 try:
@@ -1407,6 +1407,9 @@ with tab2:
                     # Process each URL
                     with st.spinner(f"Analyzing {len(sections_with_embeddings)} sections..."):
                         for section in sections_with_embeddings:
+                            if 'embedding' not in section or not isinstance(section['embedding'], np.ndarray):
+                                continue
+                                
                             url_results.append({
                                 'section': section,
                                 'weighted_similarity': weighted_similarity,
@@ -1417,6 +1420,10 @@ with tab2:
                                 'text_length': len(section['text'].split())
                             })
                     
+                    if not url_results:
+                        st.warning("No valid sections found for similarity analysis")
+                        st.stop()
+                    
                     # Sort sections by similarity
                     url_results.sort(key=lambda x: x['weighted_similarity'], reverse=True)
                     
@@ -1426,19 +1433,19 @@ with tab2:
                     with col1:
                         st.metric(
                             label="Average Weighted Similarity",
-                            value=f"{np.mean([r['weighted_similarity'] for r in url_results]):.3f}",
+                            value=f"{float(np.mean([r['weighted_similarity'] for r in url_results])):.3f}",
                             help="Weighted average similarity between the keyword and all analyzed sections"
                         )
                     with col2:
                         st.metric(
                             label="Highest Similarity",
-                            value=f"{np.max([r['raw_max_similarity'] for r in url_results]):.3f}",
+                            value=f"{float(np.max([r['raw_max_similarity'] for r in url_results])):.3f}",
                             help="Highest similarity score found across all sections"
                         )
                     with col3:
                         st.metric(
                             label="Average Std Dev",
-                            value=f"{np.mean([r['similarity_std_dev'] for r in url_results]):.3f}",
+                            value=f"{float(np.mean([r['similarity_std_dev'] for r in url_results])):.3f}",
                             help="Average standard deviation of similarity scores"
                         )
                     
@@ -1446,7 +1453,7 @@ with tab2:
                     st.subheader("Most Similar Sections")
                     for i, result in enumerate(url_results[:3], 1):
                         st.markdown(f"""
-                        **{i}. {result['section']['heading']}**  
+                        **{i}. {result['section'].get('heading', 'No heading')}**  
                         Weighted Similarity: {result['weighted_similarity']:.3f}  
                         Raw Average: {result['raw_avg_similarity']:.3f}  
                         Raw Max: {result['raw_max_similarity']:.3f}  
@@ -1456,7 +1463,7 @@ with tab2:
                         """)
                         
                         # Show detailed scores for top sections
-                        if result['detailed_scores']:
+                        if 'detailed_scores' in result and result['detailed_scores']:
                             st.markdown("**Top 3 Most Similar Sections:**")
                             for j, score in enumerate(result['detailed_scores'][:3], 1):
                                 st.markdown(f"""
@@ -1501,6 +1508,8 @@ with tab2:
                     )
                 except Exception as e:
                     st.error(f"Error calculating or displaying results: {str(e)}")
+                    debug_log(f"Error type: {type(e)}")
+                    debug_log(f"Full error: {repr(e)}")
             else:
                 st.info("Enter a keyword in the first tab to analyze similarities with webpage content.")
         else:
