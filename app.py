@@ -46,7 +46,7 @@ def debug_log(message):
         st.write(f"Debug: {message}")
 
 def get_vertex_ai_token():
-    """Get authentication token for Vertex AI with quota management and timeouts"""
+    """Get authentication token for Vertex AI with quota management"""
     try:
         # Check if we have a cached token that's still valid
         if 'vertex_ai_token' in st.session_state:
@@ -54,63 +54,31 @@ def get_vertex_ai_token():
             if time.time() < token_data['expires_at']:
                 return token_data['token']
         
-        # Get credentials and token with timeout
+        # Get credentials and token
         credentials, project = google.auth.default()
-        try:
-            # Set a timeout for the token refresh request
-            credentials.refresh(Request(timeout=10))  # 10 second timeout
-            token = credentials.token
-        except Exception as e:
-            st.error(f"Token refresh failed: {str(e)}")
-            # Clear invalid token from session
-            if 'vertex_ai_token' in st.session_state:
-                del st.session_state.vertex_ai_token
-            return None
+        credentials.refresh(Request())
+        token = credentials.token
         
         # Cache the token with expiration (tokens typically valid for 1 hour)
         st.session_state.vertex_ai_token = {
             'token': token,
-            'expires_at': time.time() + 3500,  # Cache for ~58 minutes
-            'refresh_attempts': 0  # Track refresh attempts
+            'expires_at': time.time() + 3500  # Cache for ~58 minutes
         }
         
         return token
     except Exception as e:
         st.error(f"Error getting authentication token: {str(e)}")
-        # Clear invalid token from session
-        if 'vertex_ai_token' in st.session_state:
-            del st.session_state.vertex_ai_token
         return None
 
 def check_quota_status():
-    """Check if we're approaching quota limits with improved error handling"""
-    # Initialize quota status with all required keys if not present
+    """Check if we're approaching quota limits"""
     if 'quota_status' not in st.session_state:
         st.session_state.quota_status = {
             'last_reset': time.time(),
             'requests_this_hour': 0,
             'last_error_time': 0,
-            'consecutive_errors': 0,
-            'last_success_time': time.time(),
-            'total_requests': 0,
-            'refresh_attempts': 0
+            'consecutive_errors': 0
         }
-    
-    # Ensure all required keys exist
-    required_keys = {
-        'last_reset': time.time(),
-        'requests_this_hour': 0,
-        'last_error_time': 0,
-        'consecutive_errors': 0,
-        'last_success_time': time.time(),
-        'total_requests': 0,
-        'refresh_attempts': 0
-    }
-    
-    # Add any missing keys with default values
-    for key, default_value in required_keys.items():
-        if key not in st.session_state.quota_status:
-            st.session_state.quota_status[key] = default_value
     
     current_time = time.time()
     quota_status = st.session_state.quota_status
@@ -120,7 +88,6 @@ def check_quota_status():
         quota_status['last_reset'] = current_time
         quota_status['requests_this_hour'] = 0
         quota_status['consecutive_errors'] = 0
-        quota_status['refresh_attempts'] = 0
     
     # Check if we've had too many consecutive errors
     if quota_status['consecutive_errors'] >= 3:
@@ -132,63 +99,26 @@ def check_quota_status():
     if quota_status['requests_this_hour'] >= 900:
         return False, "Approaching hourly quota limit. Please try again in a few minutes."
     
-    # Check if we've been making requests for too long without success
-    if current_time - quota_status['last_success_time'] > 1800:  # 30 minutes
-        return False, "No successful requests in the last 30 minutes. Please try again later."
-    
-    # Check total requests to prevent infinite loops
-    if quota_status['total_requests'] > 10000:  # Arbitrary large number
-        return False, "Maximum request limit reached. Please try again later."
-    
     return True, None
 
 def update_quota_status(success=True):
-    """Update quota status after a request with improved tracking"""
-    # Initialize quota status with all required keys if not present
+    """Update quota status after a request"""
     if 'quota_status' not in st.session_state:
         st.session_state.quota_status = {
             'last_reset': time.time(),
             'requests_this_hour': 0,
             'last_error_time': 0,
-            'consecutive_errors': 0,
-            'last_success_time': time.time(),
-            'total_requests': 0,
-            'refresh_attempts': 0
+            'consecutive_errors': 0
         }
     
-    # Ensure all required keys exist
-    required_keys = {
-        'last_reset': time.time(),
-        'requests_this_hour': 0,
-        'last_error_time': 0,
-        'consecutive_errors': 0,
-        'last_success_time': time.time(),
-        'total_requests': 0,
-        'refresh_attempts': 0
-    }
-    
-    # Add any missing keys with default values
-    for key, default_value in required_keys.items():
-        if key not in st.session_state.quota_status:
-            st.session_state.quota_status[key] = default_value
-    
     quota_status = st.session_state.quota_status
-    current_time = time.time()
-    
-    # Update total requests counter
-    quota_status['total_requests'] += 1
     
     if success:
         quota_status['requests_this_hour'] += 1
         quota_status['consecutive_errors'] = 0
-        quota_status['last_success_time'] = current_time
     else:
         quota_status['consecutive_errors'] += 1
-        quota_status['last_error_time'] = current_time
-        
-        # If we've had too many errors, clear the token to force a refresh
-        if quota_status['consecutive_errors'] >= 3 and 'vertex_ai_token' in st.session_state:
-            del st.session_state.vertex_ai_token
+        quota_status['last_error_time'] = time.time()
 
 def get_embedding(texts, batch_size=250):
     """Generate embeddings using Vertex AI text-embedding-005 model via REST API with improved quota management"""
@@ -288,7 +218,7 @@ def get_embedding(texts, batch_size=250):
         return None
 
 def process_batch(batch, endpoint, headers, all_embeddings):
-    """Process a single batch of texts with improved error handling and timeouts"""
+    """Process a single batch of texts with improved error handling"""
     debug_log(f"\nProcessing batch of {len(batch)} texts")
     debug_log(f"Batch token estimate: {sum(len(text) * 0.25 for text in batch):.0f}")
     
@@ -298,11 +228,10 @@ def process_batch(batch, endpoint, headers, all_embeddings):
     
     max_retries = 3
     retry_delay = 5
-    timeout = 30  # 30 second timeout for each request
     
     for attempt in range(max_retries):
         try:
-            response = requests.post(endpoint, headers=headers, json=data, timeout=timeout)
+            response = requests.post(endpoint, headers=headers, json=data)
             
             if response.status_code == 429:  # Quota exceeded
                 if attempt < max_retries - 1:
@@ -320,20 +249,12 @@ def process_batch(batch, endpoint, headers, all_embeddings):
             if response.status_code != 200:
                 st.error(f"Error from Vertex AI API: {response.status_code}")
                 debug_log(f"API Response: {response.text}")
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
-                    continue
                 return False
             
             result = response.json()
             if 'predictions' not in result or not result['predictions']:
                 st.error("No predictions in API response")
                 debug_log(f"API Response: {result}")
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
-                    continue
                 return False
             
             # Extract and validate embeddings
@@ -362,26 +283,13 @@ def process_batch(batch, endpoint, headers, all_embeddings):
             debug_log(f"Successfully extracted {len(batch_embeddings)} embeddings")
             return True
             
-        except requests.Timeout:
-            if attempt < max_retries - 1:
-                debug_log(f"Request timed out, retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-                retry_delay *= 2
-            else:
-                st.error("Request timed out after multiple retries. Please try again later.")
-                return False
-        except requests.RequestException as e:
-            if attempt < max_retries - 1:
-                debug_log(f"Request failed: {str(e)}, retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-                retry_delay *= 2
-            else:
-                st.error(f"Request failed after multiple retries: {str(e)}")
-                return False
         except Exception as e:
-            st.error(f"Unexpected error processing batch: {str(e)}")
-            debug_log(f"Error type: {type(e)}")
-            return False
+            if attempt < max_retries - 1:
+                debug_log(f"Request failed, retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                retry_delay *= 2
+            else:
+                raise e
     
     return False
 
