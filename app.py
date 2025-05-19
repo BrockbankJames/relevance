@@ -61,9 +61,11 @@ def get_cached_embedding(text):
         return st.session_state.embeddings_cache[text_hash]
     
     # If not in cache, generate new embedding
+    debug_log(f"Generating new embedding for text of length: {len(text)}")
     embedding = get_embedding(text)
     if embedding is not None:
         st.session_state.embeddings_cache[text_hash] = embedding
+        debug_log("Successfully cached new embedding")
     return embedding
 
 def get_vertex_ai_token():
@@ -261,7 +263,7 @@ def extract_sections(html_content):
     return sections
 
 def extract_sections_from_json(json_data):
-    """Extract sections from ScrapingBee JSON response, grouping content by headings"""
+    """Extract sections from ScrapingBee JSON response, grouping content by H2 tags"""
     debug_log("Processing JSON response...")
     sections = []
     
@@ -269,92 +271,190 @@ def extract_sections_from_json(json_data):
         data = json.loads(json_data)
         debug_log(f"JSON keys found: {list(data.keys())}")
         
-        # First, get all headings and paragraphs
+        # First, get all headings and paragraphs from the main content HTML
         headings = []
         paragraphs = []
         
-        if 'headings' in data and isinstance(data['headings'], list):
-            debug_log(f"Found {len(data['headings'])} headings in JSON")
-            for heading in data['headings']:
-                if heading and isinstance(heading, str):
-                    # Try to determine heading level from the content
-                    level = 2  # default to h2
-                    if heading.isupper() or len(heading) < 50:  # likely h1
-                        level = 1
-                    headings.append({
-                        'text': heading.strip(),
-                        'level': level
-                    })
-                    debug_log(f"Added heading (level {level}): {heading[:100]}")
-        
-        if 'paragraphs' in data and isinstance(data['paragraphs'], list):
-            debug_log(f"Found {len(data['paragraphs'])} paragraphs in JSON")
-            for paragraph in data['paragraphs']:
-                if paragraph and isinstance(paragraph, str):
-                    paragraphs.append(paragraph.strip())
-                    debug_log(f"Added paragraph: {paragraph[:100]}")
-        
-        # If we have main content HTML, try to extract more content
+        # Process main content HTML first to get proper heading levels
         if 'main_content' in data and data['main_content']:
             debug_log("Processing main content HTML...")
             for content_html in data['main_content']:
                 if content_html:
                     soup = BeautifulSoup(content_html, 'html.parser')
-                    # Extract headings with their levels
+                    # Extract headings with their actual levels from HTML tags
                     for tag in soup.find_all(['h1', 'h2', 'h3']):
                         if tag.get_text().strip():
                             level = int(tag.name[1])  # h1 -> 1, h2 -> 2, etc.
                             headings.append({
                                 'text': tag.get_text().strip(),
-                                'level': level
+                                'level': level,
+                                'html_tag': tag.name,
+                                'position': len(headings)  # Keep track of original position
                             })
-                            debug_log(f"Added heading from HTML (level {level}): {tag.get_text().strip()[:100]}")
+                            debug_log(f"Added heading from HTML ({tag.name}): {tag.get_text().strip()[:100]}")
                     # Extract paragraphs
                     for p in soup.find_all('p'):
                         if p.get_text().strip():
-                            paragraphs.append(p.get_text().strip())
+                            paragraphs.append({
+                                'text': p.get_text().strip(),
+                                'position': len(paragraphs)  # Keep track of position
+                            })
                             debug_log(f"Added paragraph from HTML: {p.get_text().strip()[:100]}")
         
-        # Sort headings by their position in the content
-        headings.sort(key=lambda x: x['text'])
+        # If we didn't get any headings from HTML, fall back to the headings list
+        if not headings and 'headings' in data and isinstance(data['headings'], list):
+            debug_log("No headings found in HTML, using headings list...")
+            for heading in data['headings']:
+                if heading and isinstance(heading, str):
+                    headings.append({
+                        'text': heading.strip(),
+                        'level': 2,  # Default to h2
+                        'html_tag': 'h2',
+                        'position': len(headings)
+                    })
+                    debug_log(f"Added heading from list (h2): {heading[:100]}")
         
-        # Group content into sections
+        if 'paragraphs' in data and isinstance(data['paragraphs'], list):
+            debug_log(f"Found {len(data['paragraphs'])} paragraphs in JSON")
+            for paragraph in data['paragraphs']:
+                if paragraph and isinstance(paragraph, str):
+                    paragraphs.append({
+                        'text': paragraph.strip(),
+                        'position': len(paragraphs)
+                    })
+                    debug_log(f"Added paragraph: {paragraph[:100]}")
+        
+        # Sort all content by position
+        all_content = sorted(headings + paragraphs, key=lambda x: x['position'])
+        
+        # Group content into sections based on H2 tags
         current_section = None
         current_content = []
+        current_h3_section = None
+        current_h3_content = []
         
-        for heading in headings:
-            # If we have a current section, save it
-            if current_section:
-                current_section['text'] = f"{current_section['heading']} {' '.join(current_content)}"
-                sections.append(current_section)
-                debug_log(f"Completed section: {current_section['heading'][:100]}")
+        for item in all_content:
+            if 'html_tag' in item:  # This is a heading
+                if item['html_tag'] == 'h1':
+                    # If we have a current section, save it
+                    if current_section:
+                        if current_h3_section:
+                            current_h3_section['text'] = f"{current_h3_section['heading']} {' '.join(current_h3_content)}"
+                            current_section['subsections'].append(current_h3_section)
+                        # Combine all content for embedding
+                        section_text = [current_section['heading']]
+                        section_text.extend(current_content)
+                        for subsection in current_section['subsections']:
+                            section_text.append(subsection['heading'])
+                            section_text.extend(subsection['content'])
+                        current_section['text'] = ' '.join(section_text)
+                        sections.append(current_section)
+                        debug_log(f"Completed section: {current_section['heading'][:100]}")
+                        debug_log(f"Combined text length: {len(current_section['text'])} characters")
+                    
+                    # Start new H1 section
+                    current_section = {
+                        'type': 'h1',
+                        'heading': item['text'],
+                        'text': '',
+                        'content': [],
+                        'subsections': []
+                    }
+                    current_content = []
+                    current_h3_section = None
+                    current_h3_content = []
+                    debug_log(f"\nStarting new H1 section: {item['text'][:100]}")
+                
+                elif item['html_tag'] == 'h2':
+                    # If we have a current section, save it
+                    if current_section:
+                        if current_h3_section:
+                            current_h3_section['text'] = f"{current_h3_section['heading']} {' '.join(current_h3_content)}"
+                            current_section['subsections'].append(current_h3_section)
+                        # Combine all content for embedding
+                        section_text = [current_section['heading']]
+                        section_text.extend(current_content)
+                        for subsection in current_section['subsections']:
+                            section_text.append(subsection['heading'])
+                            section_text.extend(subsection['content'])
+                        current_section['text'] = ' '.join(section_text)
+                        sections.append(current_section)
+                        debug_log(f"Completed section: {current_section['heading'][:100]}")
+                        debug_log(f"Combined text length: {len(current_section['text'])} characters")
+                    
+                    # Start new H2 section
+                    current_section = {
+                        'type': 'h2',
+                        'heading': item['text'],
+                        'text': '',
+                        'content': [],
+                        'subsections': []
+                    }
+                    current_content = []
+                    current_h3_section = None
+                    current_h3_content = []
+                    debug_log(f"\nStarting new H2 section: {item['text'][:100]}")
+                
+                elif item['html_tag'] == 'h3':
+                    # If we have a current H3 section, save it
+                    if current_h3_section:
+                        current_h3_section['text'] = f"{current_h3_section['heading']} {' '.join(current_h3_content)}"
+                        current_section['subsections'].append(current_h3_section)
+                    
+                    # Start new H3 subsection
+                    current_h3_section = {
+                        'type': 'h3',
+                        'heading': item['text'],
+                        'text': '',
+                        'content': []
+                    }
+                    current_h3_content = []
+                    debug_log(f"  Starting new H3 subsection: {item['text'][:100]}")
             
-            # Start new section
-            current_section = {
-                'type': f"h{heading['level']}",
-                'heading': heading['text'],
-                'text': '',
-                'content': []
-            }
-            current_content = []
-            debug_log(f"\nStarting new section with heading: {heading['text'][:100]}")
+            else:  # This is a paragraph
+                if current_h3_section:
+                    current_h3_content.append(item['text'])
+                    current_h3_section['content'].append(item['text'])
+                    debug_log(f"  Added paragraph to H3 section: {item['text'][:100]}")
+                else:
+                    current_content.append(item['text'])
+                    debug_log(f"Added paragraph to main section: {item['text'][:100]}")
         
-        # Add remaining paragraphs to the last section
+        # Save the last section
         if current_section:
-            current_content.extend(paragraphs)
-            current_section['text'] = f"{current_section['heading']} {' '.join(current_content)}"
+            if current_h3_section:
+                current_h3_section['text'] = f"{current_h3_section['heading']} {' '.join(current_h3_content)}"
+                current_section['subsections'].append(current_h3_section)
+            # Combine all content for embedding
+            section_text = [current_section['heading']]
+            section_text.extend(current_content)
+            for subsection in current_section['subsections']:
+                section_text.append(subsection['heading'])
+                section_text.extend(subsection['content'])
+            current_section['text'] = ' '.join(section_text)
             sections.append(current_section)
             debug_log(f"Completed final section: {current_section['heading'][:100]}")
-        elif paragraphs:  # If no headings but we have paragraphs
+            debug_log(f"Combined text length: {len(current_section['text'])} characters")
+        
+        # If we have no sections but have paragraphs, create one section
+        elif paragraphs:
+            section_text = ' '.join(p['text'] for p in paragraphs)
             sections.append({
                 'type': 'p',
-                'text': ' '.join(paragraphs)
+                'text': section_text,
+                'subsections': []
             })
             debug_log("Created section from paragraphs only")
+            debug_log(f"Combined text length: {len(section_text)} characters")
         
         debug_log(f"\nExtracted {len(sections)} total sections")
         for i, section in enumerate(sections):
-            debug_log(f"Section {i+1} ({section['type']}): {section['text'][:100]}...")
+            debug_log(f"Section {i+1} ({section['type']}): {section['heading'][:100] if 'heading' in section else 'No heading'}")
+            if section['subsections']:
+                debug_log(f"  Contains {len(section['subsections'])} subsections")
+                for j, subsection in enumerate(section['subsections']):
+                    debug_log(f"  Subsection {j+1} ({subsection['type']}): {subsection['heading'][:100]}")
+            debug_log(f"  Total text length for embedding: {len(section['text'])} characters")
         
         return sections
     except json.JSONDecodeError as e:
@@ -710,9 +810,6 @@ with tab3:
     else:
         st.warning("Please enter at least one URL to analyze.")
 
-# Add footer
-st.markdown("---")
-st.markdown("Built with Streamlit and Google's Vertex AI text-embedding-005 model") 
 # Add footer
 st.markdown("---")
 st.markdown("Built with Streamlit and Google's Vertex AI text-embedding-005 model") 
