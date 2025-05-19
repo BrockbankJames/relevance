@@ -1815,12 +1815,11 @@ with tab2:
                         if not sections:
                             st.warning(f"Could not scrape content from {url}")
                             continue
-                            
-                        # Generate embeddings for all sections
-                        section_texts = [section['text'] for section in sections]
-                        embeddings = get_cached_embedding(section_texts, batch_size=5)
                         
-                        if embeddings is None:
+                        # Generate embeddings for all sections
+                        sections_with_embeddings = get_cached_embedding(sections, batch_size=5)
+                        
+                        if sections_with_embeddings is None:
                             st.warning(f"""
                             Could not generate embeddings for {url}. This could be due to:
                             1. Vertex AI quota limits - Please try again later
@@ -1828,29 +1827,24 @@ with tab2:
                             """)
                             continue
                         
-                        try:
-                            # Calculate weighted similarity across all sections
-                            weighted_similarity, detailed_scores, metrics = calculate_weighted_similarity(
-                                sections_with_embeddings, 
-                                embedding_to_use
-                            )
-                            
-                            url_results.append({
-                                'url': url,
-                                'weighted_similarity': weighted_similarity,
-                                'raw_avg_similarity': metrics['raw_avg'],
-                                'raw_max_similarity': metrics['raw_max'],
-                                'raw_min_similarity': metrics['raw_min'],
-                                'similarity_std_dev': metrics['std_dev'],
-                                'sections_count': metrics['section_count'],
-                                'most_similar_section': detailed_scores[0]['heading'] if detailed_scores else 'No heading',
-                                'most_similar_text': detailed_scores[0]['text_preview'] if detailed_scores else '',
-                                'detailed_scores': detailed_scores
-                            })
-                        except Exception as e:
-                            st.warning(f"Error processing embeddings for {url}: {str(e)}")
-                            continue
-                            
+                        # Calculate weighted similarity across all sections
+                        weighted_similarity, detailed_scores, metrics = calculate_weighted_similarity(
+                            sections_with_embeddings, 
+                            embedding_to_use
+                        )
+                        
+                        url_results.append({
+                            'url': url,
+                            'weighted_similarity': weighted_similarity,
+                            'raw_avg_similarity': metrics['raw_avg'],
+                            'raw_max_similarity': metrics['raw_max'],
+                            'raw_min_similarity': metrics['raw_min'],
+                            'similarity_std_dev': metrics['std_dev'],
+                            'sections_count': metrics['section_count'],
+                            'most_similar_section': detailed_scores[0]['heading'] if detailed_scores else 'No heading',
+                            'most_similar_text': detailed_scores[0]['text_preview'] if detailed_scores else '',
+                            'detailed_scores': detailed_scores
+                        })
                     except Exception as e:
                         st.warning(f"Error processing {url}: {str(e)}")
                         continue
@@ -1944,15 +1938,15 @@ with tab2:
                     file_name="url_analysis.csv",
                     mime="text/csv"
                 )
-                else:
-                    st.error("""
-                    No URLs were successfully analyzed. This could be due to:
-                    1. Vertex AI quota limits - Please try again later or request a quota increase
-                    2. Invalid content - Please check if the webpages have valid text content
-                    3. Access issues - Some URLs may be blocking access
-                    
-                    You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
-                    """)
+            else:
+                st.error("""
+                No URLs were successfully analyzed. This could be due to:
+                1. Vertex AI quota limits - Please try again later or request a quota increase
+                2. Invalid content - Please check if the webpages have valid text content
+                3. Access issues - Some URLs may be blocking access
+                
+                You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
+                """)
     else:
         st.warning("Please enter at least one URL to analyze.")
 
@@ -2011,7 +2005,7 @@ with tab3:
                         if not sections:
                             st.warning(f"Could not scrape content from {url}")
                             continue
-                            
+                        
                         # Generate embeddings for all sections
                         sections_with_embeddings = get_cached_embedding(sections, batch_size=5)
                         
@@ -2023,29 +2017,24 @@ with tab3:
                             """)
                             continue
                         
-                        try:
-                            # Calculate weighted similarity across all sections
-                            weighted_similarity, detailed_scores, metrics = calculate_weighted_similarity(
-                                sections_with_embeddings, 
-                                keyword_embedding
-                            )
-                            
-                            url_results.append({
-                                'url': url,
-                                'weighted_similarity': weighted_similarity,
-                                'raw_avg_similarity': metrics['raw_avg'],
-                                'raw_max_similarity': metrics['raw_max'],
-                                'raw_min_similarity': metrics['raw_min'],
-                                'similarity_std_dev': metrics['std_dev'],
-                                'sections_count': metrics['section_count'],
-                                'most_similar_section': detailed_scores[0]['heading'] if detailed_scores else 'No heading',
-                                'most_similar_text': detailed_scores[0]['text_preview'] if detailed_scores else '',
-                                'detailed_scores': detailed_scores
-                            })
-                        except Exception as e:
-                            st.warning(f"Error processing embeddings for {url}: {str(e)}")
-                            continue
-                            
+                        # Calculate weighted similarity across all sections
+                        weighted_similarity, detailed_scores, metrics = calculate_weighted_similarity(
+                            sections_with_embeddings, 
+                            keyword_embedding
+                        )
+                        
+                        url_results.append({
+                            'url': url,
+                            'weighted_similarity': weighted_similarity,
+                            'raw_avg_similarity': metrics['raw_avg'],
+                            'raw_max_similarity': metrics['raw_max'],
+                            'raw_min_similarity': metrics['raw_min'],
+                            'similarity_std_dev': metrics['std_dev'],
+                            'sections_count': metrics['section_count'],
+                            'most_similar_section': detailed_scores[0]['heading'] if detailed_scores else 'No heading',
+                            'most_similar_text': detailed_scores[0]['text_preview'] if detailed_scores else '',
+                            'detailed_scores': detailed_scores
+                        })
                     except Exception as e:
                         st.warning(f"Error processing {url}: {str(e)}")
                         continue
