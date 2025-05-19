@@ -107,16 +107,17 @@ def get_embedding(text):
         
         # Initialize the model
         debug_log("Initializing model...")
-        model = aiplatform.TextEmbeddingModel.from_pretrained("textembedding-gecko@latest")
+        model = aiplatform.Model("textembedding-gecko@latest")
         debug_log("Model initialized successfully")
         
         # Get embeddings
         debug_log("Getting embeddings...")
-        embeddings = model.get_embeddings([text])
+        response = model.predict([text])
         debug_log("Embeddings generated successfully")
         
-        # Return the first (and only) embedding
-        embedding = np.array(embeddings[0].values)
+        # Extract the embedding from the response
+        # The response format is different for the gecko model
+        embedding = np.array(response.predictions[0])
         debug_log(f"Embedding shape: {embedding.shape}")
         return embedding
     except Exception as e:
@@ -140,9 +141,8 @@ def scrape_webpage(url):
         encoded_url = urllib.parse.quote(url, safe=':/?=&')
         
         # Log the request details (for debugging)
-        st.write("Debug info (will be removed in production):")
-        st.write(f"Original URL: {url}")
-        st.write(f"Encoded URL: {encoded_url}")
+        debug_log(f"Original URL: {url}")
+        debug_log(f"Encoded URL: {encoded_url}")
         
         # Make the request to ScrapingBee API with enhanced parameters
         params = {
@@ -157,22 +157,22 @@ def scrape_webpage(url):
         
         # Log the full API URL (without the API key)
         debug_url = f"https://app.scrapingbee.com/api/v1/?url={encoded_url}&render_js=true&premium_proxy=true"
-        st.write(f"API URL (without key): {debug_url}")
+        debug_log(f"API URL (without key): {debug_url}")
         
         api_url = "https://app.scrapingbee.com/api/v1/"
         response = requests.get(api_url, params=params)
         
         if response.status_code != 200:
             st.error(f"Error scraping webpage: HTTP {response.status_code}")
-            if response.text:
-                try:
-                    error_data = response.json()
-                    if 'error' in error_data:
-                        st.error(f"API Error: {error_data['error']}")
-                        if 'reason' in error_data:
-                            st.error(f"Reason: {error_data['reason']}")
-                except:
-                    st.error(f"Raw API Response: {response.text}")
+            try:
+                error_data = response.json()
+                if 'error' in error_data:
+                    st.error(f"API Error: {error_data['error']}")
+                    if 'reason' in error_data:
+                        st.error(f"Reason: {error_data['reason']}")
+            except:
+                debug_log(f"Raw API Response: {response.text}")
+                st.error("Failed to parse API error response")
             return None
         
         # Parse the HTML content
@@ -194,6 +194,7 @@ def scrape_webpage(url):
         return sections
     except Exception as e:
         st.error(f"Error scraping webpage: {str(e)}")
+        debug_log(f"Scraping error details: {str(e)}")
         return None
 
 def calculate_similarity(embedding1, embedding2):
