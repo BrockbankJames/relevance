@@ -529,13 +529,13 @@ def extract_sections_from_json(json_data):
                 try:
                     soup = BeautifulSoup(content_html, 'html.parser')
                     
-                    # Find all heading tags
-                    headings = soup.find_all(['h1', 'h2', 'h3'])
+                    # Find all heading tags in order
+                    headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
                     debug_log(f"\nFound {len(headings)} heading tags")
                     
-                    # Process each heading and its content
+                    # Process headings in order, maintaining hierarchy
                     current_section = None
-                    current_h3_content = []
+                    current_content = []
                     
                     for heading in headings:
                         # Get heading text
@@ -543,73 +543,54 @@ def extract_sections_from_json(json_data):
                         if not heading_text:
                             continue
                         
-                        # If this is an h1 or h2, start a new main section
-                        if heading.name in ['h1', 'h2']:
-                            # Save previous section if it exists
-                            if current_section:
-                                # Add any accumulated H3 content to the section
-                                if current_h3_content:
-                                    current_section['content'].extend(current_h3_content)
-                                
-                                # Combine all content for the section
-                                if current_section['content']:
-                                    current_section['text'] = f"{current_section['heading']} {' '.join(current_section['content'])}"
-                                if len(current_section['text'].split()) > 3:  # Only add meaningful sections
-                                    sections.append(current_section)
+                        # Save previous section if it exists
+                        if current_section:
+                            # Add accumulated content to the section
+                            if current_content:
+                                current_section['content'].extend(current_content)
+                                current_section['text'] = f"{current_section['heading']} {' '.join(current_section['content'])}"
                             
-                            # Start new main section
-                            current_section = {
-                                'type': heading.name,
-                                'heading': heading_text,
-                                'text': heading_text,
-                                'content': [],
-                                'subsections': []
-                            }
-                            current_h3_section = None
-                            debug_log(f"\nStarting new {heading.name} section: {heading_text[:100]}")
-                        
-                        # If this is an h3, start a new subsection
-                        elif heading.name == 'h3' and current_section:
-                            # Save previous h3 section if it exists
-                            if current_h3_section:
-                                current_h3_section['text'] = f"{current_h3_section['heading']} {' '.join(current_h3_section['content'])}"
-                                current_section['subsections'].append(current_h3_section)
+                            # Only add meaningful sections
+                            if len(current_section['text'].split()) > 3:
+                                sections.append(current_section)
+                                debug_log(f"Completed section: {current_section['heading'][:100]}")
+                                debug_log(f"Content items: {len(current_section['content'])}")
                             
-                            # Start new h3 subsection
-                            current_h3_section = {
-                                'type': 'h3',
-                                'heading': heading_text,
-                                'text': heading_text,
-                                'content': []
-                            }
-                            debug_log(f"  Starting new H3 subsection: {heading_text[:100]}")
+                            # Reset content for next section
+                            current_content = []
                         
-                        # Get all content until next heading
+                        # Start new section
+                        current_section = {
+                            'type': heading.name,
+                            'heading': heading_text,
+                            'text': heading_text,
+                            'content': []
+                        }
+                        debug_log(f"\nStarting new {heading.name} section: {heading_text[:100]}")
+                        
+                        # Get all content until next heading of same or higher level
                         current = heading.next_sibling
-                        while current and not (hasattr(current, 'name') and current.name in ['h1', 'h2', 'h3']):
+                        while current and not (hasattr(current, 'name') and 
+                                             current.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] and 
+                                             int(current.name[1]) <= int(heading.name[1])):
                             if hasattr(current, 'name'):
                                 # Get text from any element
                                 text = current.get_text().strip()
                                 if text and len(text.split()) > 2:  # Skip very short text
-                                    if current_h3_section:
-                                        current_h3_section['content'].append(text)
-                                    elif current_section:
-                                        current_section['content'].append(text)
+                                    current_content.append(text)
+                                    debug_log(f"Added content: {text[:100]}")
                             current = current.next_sibling
                     
-                    # Save final sections
+                    # Save final section
                     if current_section:
-                        # Save final h3 section if it exists
-                        if current_h3_section:
-                            current_h3_section['text'] = f"{current_h3_section['heading']} {' '.join(current_h3_section['content'])}"
-                            current_section['subsections'].append(current_h3_section)
-                        
-                        # Combine all content for the section
-                        if current_section['content']:
+                        if current_content:
+                            current_section['content'].extend(current_content)
                             current_section['text'] = f"{current_section['heading']} {' '.join(current_section['content'])}"
                         
-                        if len(current_section['text'].split()) > 3:  # Only add meaningful sections
+                        if len(current_section['text'].split()) > 3:
                             sections.append(current_section)
+                            debug_log(f"Completed final section: {current_section['heading'][:100]}")
+                            debug_log(f"Content items: {len(current_section['content'])}")
                     
                 except Exception as e:
                     debug_log(f"Error processing content_html {i+1}: {str(e)}")
@@ -639,8 +620,7 @@ def extract_sections_from_json(json_data):
                             'type': 'content',
                             'heading': 'Content Section',
                             'text': ' '.join(content_elements),
-                            'content': content_elements,
-                            'subsections': []
+                            'content': content_elements
                         })
             except Exception as e:
                 debug_log(f"Error processing fallback content: {str(e)}")
@@ -650,8 +630,6 @@ def extract_sections_from_json(json_data):
             debug_log(f"Section {i+1} ({section['type']}): {section['heading'][:100]}")
             debug_log(f"  Text length: {len(section['text'])} characters")
             debug_log(f"  Content items: {len(section['content'])}")
-            if section['subsections']:
-                debug_log(f"  Subsections: {len(section['subsections'])}")
         
         return sections
         
