@@ -1895,55 +1895,55 @@ with tab2:
                     Most similar section: {result['most_similar_section']}  
                     Preview: {result['most_similar_text']}
                     """)
-                        
-                        # Show detailed scores for top sections
-                        if result['detailed_scores']:
-                            st.markdown("**Top 3 Most Similar Sections:**")
-                            for j, score in enumerate(result['detailed_scores'][:3], 1):
-                                st.markdown(f"""
-                                {j}. {score['heading']}  
-                                Similarity: {score['similarity']:.3f}  
-                                Weight: {score['weight']:.3f}  
-                                Length: {score['length']} words  
-                                Preview: {score['text_preview']}
-                                """)
                     
-                    # Display all URLs in a table
-                    st.subheader("All URL Similarities")
-                    df = pd.DataFrame(url_results)
-                    # Round numeric columns
-                    numeric_cols = ['weighted_similarity', 'raw_avg_similarity', 'raw_max_similarity', 
-                                  'raw_min_similarity', 'similarity_std_dev']
-                    df[numeric_cols] = df[numeric_cols].round(3)
-                    
-                    # Rename columns
-                    df = df.rename(columns={
-                        'url': 'URL',
-                        'weighted_similarity': 'Weighted Similarity',
-                        'raw_avg_similarity': 'Raw Average',
-                        'raw_max_similarity': 'Raw Maximum',
-                        'raw_min_similarity': 'Raw Minimum',
-                        'similarity_std_dev': 'Std Deviation',
-                        'sections_count': 'Sections Analyzed',
-                        'most_similar_section': 'Most Similar Section',
-                        'most_similar_text': 'Section Preview'
-                    })
-                    
-                    # Reorder columns
-                    df = df[['URL', 'Weighted Similarity', 'Raw Average', 'Raw Maximum', 
-                            'Raw Minimum', 'Std Deviation', 'Sections Analyzed', 
-                            'Most Similar Section', 'Section Preview']]
-                    
-                    st.dataframe(df, use_container_width=True)
-                    
-                    # Add download button for results
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="Download Analysis Results as CSV",
-                        data=csv,
-                        file_name="url_analysis.csv",
-                        mime="text/csv"
-                    )
+                    # Show detailed scores for top sections
+                    if result['detailed_scores']:
+                        st.markdown("**Top 3 Most Similar Sections:**")
+                        for j, score in enumerate(result['detailed_scores'][:3], 1):
+                            st.markdown(f"""
+                            {j}. {score['heading']}  
+                            Similarity: {score['similarity']:.3f}  
+                            Weight: {score['weight']:.3f}  
+                            Length: {score['length']} words  
+                            Preview: {score['text_preview']}
+                            """)
+                
+                # Display all URLs in a table
+                st.subheader("All URL Similarities")
+                df = pd.DataFrame(url_results)
+                # Round numeric columns
+                numeric_cols = ['weighted_similarity', 'raw_avg_similarity', 'raw_max_similarity', 
+                              'raw_min_similarity', 'similarity_std_dev']
+                df[numeric_cols] = df[numeric_cols].round(3)
+                
+                # Rename columns
+                df = df.rename(columns={
+                    'url': 'URL',
+                    'weighted_similarity': 'Weighted Similarity',
+                    'raw_avg_similarity': 'Raw Average',
+                    'raw_max_similarity': 'Raw Maximum',
+                    'raw_min_similarity': 'Raw Minimum',
+                    'similarity_std_dev': 'Std Deviation',
+                    'sections_count': 'Sections Analyzed',
+                    'most_similar_section': 'Most Similar Section',
+                    'most_similar_text': 'Section Preview'
+                })
+                
+                # Reorder columns
+                df = df[['URL', 'Weighted Similarity', 'Raw Average', 'Raw Maximum', 
+                        'Raw Minimum', 'Std Deviation', 'Sections Analyzed', 
+                        'Most Similar Section', 'Section Preview']]
+                
+                st.dataframe(df, use_container_width=True)
+                
+                # Add download button for results
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="Download Analysis Results as CSV",
+                    data=csv,
+                    file_name="url_analysis.csv",
+                    mime="text/csv"
+                )
                 else:
                     st.error("""
                     No URLs were successfully analyzed. This could be due to:
