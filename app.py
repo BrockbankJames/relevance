@@ -721,8 +721,8 @@ def scrape_webpage(url):
                         try:
                             soup = BeautifulSoup(content_html, 'html.parser')
                             
-                            # Remove header and footer elements
-                            for tag in soup.find_all(['header', 'footer']):
+                            # Remove header, footer, and nav elements
+                            for tag in soup.find_all(['header', 'footer', 'nav']):
                                 debug_log(f"Removing {tag.name} element and its contents")
                                 tag.decompose()
                             
