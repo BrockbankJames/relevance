@@ -884,14 +884,17 @@ def scrape_webpage(url):
                                         if any(
                                             class_name.lower() in ['nav', 'navigation', 'navbar', 'navbar-nav', 'nav-menu', 'nav-wrapper', 'nav-container', 
                                                                  'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal',
-                                                                 'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice']
+                                                                 'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice',
+                                                                 'preference', 'preferences', 'preference-panel', 'preference-modal', 'preference-popup', 'preference-wrapper', 'preference-container', 'preference-box', 'preference-settings', 'preference-menu', 'preference-dialog', 'preference-overlay', 'preference-banner', 'preference-notice']
                                             or element.get('role') == 'navigation'
                                             or element.get('aria-label', '').lower() in ['navigation', 'main navigation', 'primary navigation', 
                                                                                        'cookie consent', 'cookie notice', 'cookie policy',
-                                                                                       'login', 'log in', 'login form', 'login modal', 'login popup', 'login panel', 'login dialog']
+                                                                                       'login', 'log in', 'login form', 'login modal', 'login popup', 'login panel', 'login dialog',
+                                                                                       'preference', 'preferences', 'preference panel', 'preference modal', 'preference popup', 'preference settings', 'preference menu', 'preference dialog']
                                             or element.get('id', '').lower() in ['nav', 'navigation', 'navbar', 'main-nav', 'primary-nav', 
                                                                                'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal',
-                                                                               'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice']
+                                                                               'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice',
+                                                                               'preference', 'preferences', 'preference-panel', 'preference-modal', 'preference-popup', 'preference-wrapper', 'preference-container', 'preference-box', 'preference-settings', 'preference-menu', 'preference-dialog', 'preference-overlay', 'preference-banner', 'preference-notice']
                                             for class_name in classes
                                         ):
                                             continue
@@ -981,17 +984,20 @@ def scrape_webpage(url):
                             if any(
                                 class_name.lower() in ['nav', 'navigation', 'navbar', 'navbar-nav', 'nav-menu', 'nav-wrapper', 'nav-container', 
                                                                  'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal',
-                                                                 'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice']
-                                or element.get('role') == 'navigation'
-                                or element.get('aria-label', '').lower() in ['navigation', 'main navigation', 'primary navigation', 
-                                                                           'cookie consent', 'cookie notice', 'cookie policy',
-                                                                           'login', 'log in', 'login form', 'login modal', 'login popup', 'login panel', 'login dialog']
-                                or element.get('id', '').lower() in ['nav', 'navigation', 'navbar', 'main-nav', 'primary-nav', 
-                                                                       'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal',
-                                                                       'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice']
-                                for class_name in classes
-                            ):
-                                continue
+                                                                 'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice',
+                                                                 'preference', 'preferences', 'preference-panel', 'preference-modal', 'preference-popup', 'preference-wrapper', 'preference-container', 'preference-box', 'preference-settings', 'preference-menu', 'preference-dialog', 'preference-overlay', 'preference-banner', 'preference-notice']
+                                            or element.get('role') == 'navigation'
+                                            or element.get('aria-label', '').lower() in ['navigation', 'main navigation', 'primary navigation', 
+                                                                                       'cookie consent', 'cookie notice', 'cookie policy',
+                                                                                       'login', 'log in', 'login form', 'login modal', 'login popup', 'login panel', 'login dialog',
+                                                                                       'preference', 'preferences', 'preference panel', 'preference modal', 'preference popup', 'preference settings', 'preference menu', 'preference dialog']
+                                            or element.get('id', '').lower() in ['nav', 'navigation', 'navbar', 'main-nav', 'primary-nav', 
+                                                                               'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal',
+                                                                               'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice',
+                                                                               'preference', 'preferences', 'preference-panel', 'preference-modal', 'preference-popup', 'preference-wrapper', 'preference-container', 'preference-box', 'preference-settings', 'preference-menu', 'preference-dialog', 'preference-overlay', 'preference-banner', 'preference-notice']
+                                            for class_name in classes
+                                        ):
+                                            continue
                         
                         text = element.get_text().strip()
                         if text and len(text.split()) > 2:
