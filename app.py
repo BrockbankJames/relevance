@@ -1118,36 +1118,47 @@ def scrape_webpage(url):
 def calculate_similarity(embedding1, embedding2):
     """Calculate cosine similarity between two embeddings with additional validation"""
     try:
+        # Validate inputs
+        if embedding1 is None or embedding2 is None:
+            debug_log("Invalid input: one or both embeddings are None")
+            return 0.0
+            
+        if not isinstance(embedding1, np.ndarray) or not isinstance(embedding2, np.ndarray):
+            debug_log("Invalid input: embeddings must be numpy arrays")
+            return 0.0
+            
         # Debug logging for input embeddings
         debug_log(f"\nCalculating similarity between embeddings:")
-        debug_log(f"Embedding 1 type: {type(embedding1)}, shape: {embedding1.shape if hasattr(embedding1, 'shape') else 'no shape'}")
-        debug_log(f"Embedding 2 type: {type(embedding2)}, shape: {embedding2.shape if hasattr(embedding2, 'shape') else 'no shape'}")
+        debug_log(f"Embedding 1 type: {type(embedding1)}, shape: {embedding1.shape}")
+        debug_log(f"Embedding 2 type: {type(embedding2)}, shape: {embedding2.shape}")
         
-        # Ensure embeddings are numpy arrays
-        if not isinstance(embedding1, np.ndarray):
-            embedding1 = np.array(embedding1, dtype=np.float32)
-        if not isinstance(embedding2, np.ndarray):
-            embedding2 = np.array(embedding2, dtype=np.float32)
+        # Ensure embeddings are numpy arrays of float32
+        embedding1 = np.array(embedding1, dtype=np.float32)
+        embedding2 = np.array(embedding2, dtype=np.float32)
             
         # Debug logging for numpy arrays
-        debug_log(f"After conversion - Embedding 1: mean={np.mean(embedding1):.4f}, std={np.std(embedding1):.4f}")
-        debug_log(f"After conversion - Embedding 2: mean={np.mean(embedding2):.4f}, std={np.std(embedding2):.4f}")
+        debug_log(f"After conversion - Embedding 1: mean={float(np.mean(embedding1)):.4f}, std={float(np.std(embedding1)):.4f}")
+        debug_log(f"After conversion - Embedding 2: mean={float(np.mean(embedding2)):.4f}, std={float(np.std(embedding2)):.4f}")
         
         # Normalize embeddings
-        norm1 = np.linalg.norm(embedding1)
-        norm2 = np.linalg.norm(embedding2)
+        norm1 = float(np.linalg.norm(embedding1))
+        norm2 = float(np.linalg.norm(embedding2))
         debug_log(f"Norms before normalization: {norm1:.4f}, {norm2:.4f}")
+        
+        if norm1 == 0 or norm2 == 0:
+            debug_log("Invalid input: zero norm detected")
+            return 0.0
         
         embedding1 = embedding1 / norm1
         embedding2 = embedding2 / norm2
         
         # Debug logging after normalization
-        debug_log(f"After normalization - Embedding 1: mean={np.mean(embedding1):.4f}, std={np.std(embedding1):.4f}")
-        debug_log(f"After normalization - Embedding 2: mean={np.mean(embedding2):.4f}, std={np.std(embedding2):.4f}")
-        debug_log(f"Norms after normalization: {np.linalg.norm(embedding1):.4f}, {np.linalg.norm(embedding2):.4f}")
+        debug_log(f"After normalization - Embedding 1: mean={float(np.mean(embedding1)):.4f}, std={float(np.std(embedding1)):.4f}")
+        debug_log(f"After normalization - Embedding 2: mean={float(np.mean(embedding2)):.4f}, std={float(np.std(embedding2)):.4f}")
+        debug_log(f"Norms after normalization: {float(np.linalg.norm(embedding1)):.4f}, {float(np.linalg.norm(embedding2)):.4f}")
         
         # Calculate cosine similarity
-        similarity = np.dot(embedding1, embedding2)
+        similarity = float(np.dot(embedding1, embedding2))
         debug_log(f"Raw similarity score: {similarity:.4f}")
         
         # Add validation to ensure similarity is in expected range
@@ -1158,11 +1169,14 @@ def calculate_similarity(embedding1, embedding2):
         return float(similarity)
     except Exception as e:
         debug_log(f"Error in calculate_similarity: {str(e)}")
+        debug_log(f"Error type: {type(e)}")
+        debug_log(f"Full error: {repr(e)}")
         return 0.0
 
 def calculate_weighted_similarity(sections, keyword_embedding):
     """Calculate weighted similarity score for a set of sections"""
-    if not sections or not keyword_embedding:
+    if not sections or keyword_embedding is None or not isinstance(keyword_embedding, np.ndarray):
+        debug_log("Invalid input to calculate_weighted_similarity")
         return 0.0, [], {}
         
     try:
@@ -1173,6 +1187,10 @@ def calculate_weighted_similarity(sections, keyword_embedding):
         # Calculate raw similarities
         section_similarities = []
         for i, section in enumerate(sections):
+            if 'embedding' not in section or not isinstance(section['embedding'], np.ndarray):
+                debug_log(f"Skipping section {i+1}: Invalid embedding")
+                continue
+                
             debug_log(f"\nProcessing section {i+1}:")
             debug_log(f"Section heading: {section.get('heading', 'No heading')}")
             debug_log(f"Section text length: {len(section['text'].split())} words")
@@ -1186,6 +1204,10 @@ def calculate_weighted_similarity(sections, keyword_embedding):
                 'similarity': similarity,
                 'text_length': len(section['text'].split())
             })
+        
+        if not section_similarities:
+            debug_log("No valid sections found for similarity calculation")
+            return 0.0, [], {}
         
         # Sort sections by similarity
         section_similarities.sort(key=lambda x: x['similarity'], reverse=True)
@@ -1235,12 +1257,12 @@ def calculate_weighted_similarity(sections, keyword_embedding):
         # Calculate additional metrics
         raw_similarities = [s['similarity'] for s in section_similarities]
         metrics = {
-            'raw_avg': np.mean(raw_similarities),
-            'raw_max': max(raw_similarities),
-            'raw_min': min(raw_similarities),
-            'std_dev': np.std(raw_similarities),
+            'raw_avg': float(np.mean(raw_similarities)),
+            'raw_max': float(max(raw_similarities)),
+            'raw_min': float(min(raw_similarities)),
+            'std_dev': float(np.std(raw_similarities)),
             'section_count': len(sections),
-            'weighted_avg': weighted_avg
+            'weighted_avg': float(weighted_avg)
         }
         
         debug_log("\nFinal metrics:")
@@ -1255,6 +1277,8 @@ def calculate_weighted_similarity(sections, keyword_embedding):
         
     except Exception as e:
         debug_log(f"Error in calculate_weighted_similarity: {str(e)}")
+        debug_log(f"Error type: {type(e)}")
+        debug_log(f"Full error: {repr(e)}")
         return 0.0, [], {}
 
 # Create tabs for different input methods
