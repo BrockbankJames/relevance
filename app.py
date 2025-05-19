@@ -572,11 +572,34 @@ def extract_sections_from_json(json_data):
                             should_remove = False
                             for class_name in classes:
                                 class_name_lower = class_name.lower()
-                                if 'nav' in class_name_lower or 'navigation' in class_name_lower:
-                                    debug_log(f"MATCH FOUND - Class '{class_name}' contains navigation term")
+                                # More specific checks for actual navigation elements
+                                if (
+                                    # Common navigation class names
+                                    class_name_lower in ['nav', 'navigation', 'navbar', 'navbar-nav', 'nav-menu', 'nav-wrapper', 'nav-container'] or
+                                    # Common navigation role attributes
+                                    element.get('role') == 'navigation' or
+                                    # Common navigation ARIA roles
+                                    element.get('aria-label', '').lower() in ['navigation', 'main navigation', 'primary navigation'] or
+                                    # Common navigation IDs
+                                    element.get('id', '').lower() in ['nav', 'navigation', 'navbar', 'main-nav', 'primary-nav']
+                                ):
+                                    debug_log(f"MATCH FOUND - Element is actual navigation: {class_name}")
                                     should_remove = True
-                                else:
-                                    debug_log(f"No match in class '{class_name}'")
+                                    break
+                                # Skip elements that have 'nav' in class but aren't navigation
+                                elif 'nav' in class_name_lower:
+                                    # Check if this is a legitimate content element with 'nav' in class
+                                    if (
+                                        element.name in ['div', 'section', 'article'] and
+                                        not any(nav_term in element.get('role', '').lower() for nav_term in ['nav', 'navigation']) and
+                                        not any(nav_term in element.get('aria-label', '').lower() for nav_term in ['nav', 'navigation'])
+                                    ):
+                                        debug_log(f"Keeping element - 'nav' in class but not navigation: {class_name}")
+                                        continue
+                                    else:
+                                        debug_log(f"MATCH FOUND - Class '{class_name}' contains navigation term")
+                                        should_remove = True
+                                        break
                             
                             if should_remove:
                                 debug_log(f"REMOVING element with classes: {classes}")
