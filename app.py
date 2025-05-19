@@ -112,7 +112,6 @@ def get_embedding(texts, batch_size=250):
         current_batch_tokens = 0
         
         # Rough estimate: 1 token ≈ 4 characters for English text
-        # This is a conservative estimate to stay well under the 20,000 token limit
         TOKENS_PER_CHAR = 0.25
         MAX_TOKENS_PER_TEXT = 8000  # Slightly under 8,192 to be safe
         MAX_TOKENS_PER_BATCH = 19000  # Slightly under 20,000 to be safe
@@ -136,7 +135,7 @@ def get_embedding(texts, batch_size=250):
                         "instances": [{"content": text} for text in current_batch]
                     }
                     
-                    # Make the API request with retry logic for quota limits
+                    # Make the API request with retry logic
                     max_retries = 3
                     retry_delay = 5  # Start with 5 second delay
                     
@@ -1688,4 +1687,4 @@ with tab3:
 
 # Add footer
 st.markdown("---")
-st.markdown("Built with Streamlit and Google's Vertex AI text-embedding-005 model") 
+st.markdown("Built with Streamlit and Google's Vertex AI text-embedding-005 model")
