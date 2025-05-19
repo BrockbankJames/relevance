@@ -923,14 +923,23 @@ with tab2:
                 section_texts = [section['text'] for section in sections]
                 embeddings = get_cached_embedding(section_texts, batch_size=5)
                 
-                if embeddings is not None:
-                    section_embeddings = embeddings if isinstance(embeddings, list) else [embeddings]
-            
-            if section_embeddings:
-                # If we have a keyword embedding from tab1, calculate similarity
-                if 'keyword_embedding' in locals() and keyword_embedding is not None:
-                    st.subheader("Similarity Analysis")
+                if embeddings is None:
+                    st.error("""
+                    Failed to generate embeddings. This could be due to:
+                    1. Vertex AI quota limits - Please try again later or request a quota increase
+                    2. Invalid content - Please check if the webpage has valid text content
                     
+                    You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
+                    """)
+                    st.stop()
+                
+                section_embeddings = embeddings if isinstance(embeddings, list) else [embeddings]
+            
+            # If we have a keyword embedding from tab1, calculate similarity
+            if 'keyword_embedding' in locals() and keyword_embedding is not None:
+                st.subheader("Similarity Analysis")
+                
+                try:
                     # Average all section embeddings
                     avg_section_embedding = np.mean(section_embeddings, axis=0)
                     
@@ -950,10 +959,11 @@ with tab2:
                     1. Averaging all section embeddings from the webpage
                     2. Computing cosine similarity between the keyword embedding and the averaged webpage embedding
                     """)
-                else:
-                    st.info("Enter a keyword in the first tab to analyze similarities with webpage content.")
+                except Exception as e:
+                    st.error(f"Error calculating similarity: {str(e)}")
+                    debug_log(f"Error details: {str(e)}")
             else:
-                st.error("Failed to generate embeddings for any sections. Please check the error messages above.")
+                st.info("Enter a keyword in the first tab to analyze similarities with webpage content.")
         else:
             st.error("Failed to scrape webpage content. Please check the URL and try again.")
 
@@ -979,7 +989,13 @@ with tab3:
         if 'url_input' not in locals() or not url_input:
             st.warning("Please analyze a webpage in the 'Webpage Analysis' tab first.")
         elif 'section_embeddings' not in locals() or not section_embeddings:
-            st.warning("No valid embeddings found for the analyzed webpage. Please try analyzing the webpage again.")
+            st.warning("""
+            No valid embeddings found for the analyzed webpage. This could be due to:
+            1. Vertex AI quota limits - Please try again later or request a quota increase
+            2. Invalid content - Please check if the webpage has valid text content
+            
+            You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
+            """)
         else:
             # Process URLs
             urls = [url.strip() for url in urls_input.split('\n') if url.strip()]
@@ -1014,11 +1030,15 @@ with tab3:
                             section_texts = [section['text'] for section in sections]
                             embeddings = get_cached_embedding(section_texts, batch_size=5)
                             
-                            if embeddings is not None:
-                                section_embeddings_url = embeddings if isinstance(embeddings, list) else [embeddings]
-                            else:
-                                st.warning(f"Could not generate embeddings for {url}")
+                            if embeddings is None:
+                                st.warning(f"""
+                                Could not generate embeddings for {url}. This could be due to:
+                                1. Vertex AI quota limits - Please try again later
+                                2. Invalid content - Please check if the webpage has valid text content
+                                """)
                                 continue
+                            
+                            section_embeddings_url = embeddings if isinstance(embeddings, list) else [embeddings]
                             
                             try:
                                 # Average section embeddings
@@ -1104,10 +1124,20 @@ with tab3:
                     except Exception as e:
                         st.error(f"Error calculating or displaying results: {str(e)}")
                 else:
-                    st.error("No URLs were successfully analyzed. Please check the URLs and try again.")
+                    st.error("""
+                    No URLs were successfully analyzed. This could be due to:
+                    1. Vertex AI quota limits - Please try again later or request a quota increase
+                    2. Invalid content - Please check if the webpages have valid text content
+                    3. Access issues - Some URLs may be blocking access
+                    
+                    You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
+                    """)
     else:
         st.warning("Please enter at least one URL to analyze.")
 
+# Add footer
+st.markdown("---")
+st.markdown("Built with Streamlit and Google's Vertex AI text-embedding-005 model") 
 # Add footer
 st.markdown("---")
 st.markdown("Built with Streamlit and Google's Vertex AI text-embedding-005 model") 
