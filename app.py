@@ -579,9 +579,11 @@ def extract_sections_from_json(json_data):
                                     # Common navigation role attributes
                                     element.get('role') == 'navigation' or
                                     # Common navigation ARIA roles
-                                    element.get('aria-label', '').lower() in ['navigation', 'main navigation', 'primary navigation'] or
-                                    # Common navigation IDs
-                                    element.get('id', '').lower() in ['nav', 'navigation', 'navbar', 'main-nav', 'primary-nav']
+                                    element.get('aria-label', '').lower() in ['navigation', 'main navigation', 'primary navigation', 
+                                                                            'cookie consent', 'cookie notice', 'cookie policy',
+                                                                            'login', 'log in', 'login form', 'login modal',
+                                                                            'preference', 'preferences', 'preference panel',
+                                                                            'onetrust']
                                 ):
                                     debug_log(f"MATCH FOUND - Element is actual navigation: {class_name}")
                                     should_remove = True
@@ -889,11 +891,23 @@ def scrape_webpage(url):
                             debug_log("\nStarting section processing...")
                             
                             # First, find all H1 elements to ensure we don't miss any
-                            all_h1s = soup.find_all('h1')
-                            debug_log(f"\nFound {len(all_h1s)} H1 elements:")
+                            all_h1s = soup.find_all('h1', class_=True)  # Find H1s with any class
+                            debug_log(f"\nFound {len(all_h1s)} H1 elements with classes:")
                             for h1 in all_h1s:
                                 debug_log(f"H1 text: {h1.get_text().strip()[:100]}")
+                                debug_log(f"H1 classes: {h1.get('class', [])}")
                                 debug_log(f"H1 HTML: {h1.prettify()[:200]}")
+                            
+                            # Also find H1s without classes
+                            h1s_without_class = soup.find_all('h1', class_=False)
+                            debug_log(f"\nFound {len(h1s_without_class)} H1 elements without classes:")
+                            for h1 in h1s_without_class:
+                                debug_log(f"H1 text: {h1.get_text().strip()[:100]}")
+                                debug_log(f"H1 HTML: {h1.prettify()[:200]}")
+                            
+                            # Combine all H1s
+                            all_h1s.extend(h1s_without_class)
+                            debug_log(f"\nTotal H1 elements found: {len(all_h1s)}")
                             
                             # Create sections list to store all sections
                             sections = []
@@ -903,7 +917,7 @@ def scrape_webpage(url):
                                 if h1 not in processed_h1s:
                                     debug_log(f"\nProcessing H1 element: {h1.get_text().strip()[:100]}")
                                     h1_text = h1.get_text().strip()
-                                    if h1_text and len(h1_text.split()) > 2:
+                                    if h1_text:  # Remove length check to capture all H1s
                                         # Create H1 section
                                         h1_section = {
                                             'type': 'h1',
@@ -922,7 +936,7 @@ def scrape_webpage(url):
                                                              current.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
                                             if hasattr(current, 'name'):
                                                 text = current.get_text().strip()
-                                                if text and len(text.split()) > 2:
+                                                if text:  # Remove length check to capture all content
                                                     h1_section['content'].append(text)
                                                     h1_section['text'] = f"{h1_section['heading']} {' '.join(h1_section['content'])}"
                                                     debug_log(f"Added content to H1 section: {text[:100]}")
