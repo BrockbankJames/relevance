@@ -533,17 +533,61 @@ def extract_sections_from_json(json_data):
                     # Create a single soup object from all content
                     soup = BeautifulSoup(combined_html, 'html.parser')
                     
+                    # Debug: Log all nav elements before removal
+                    nav_elements = soup.find_all('nav')
+                    debug_log(f"\nFound {len(nav_elements)} nav elements before removal:")
+                    for i, nav in enumerate(nav_elements):
+                        debug_log(f"Nav element {i+1}:")
+                        debug_log(f"  HTML: {nav.prettify()[:200]}...")
+                        debug_log(f"  Text content: {nav.get_text().strip()[:200]}...")
+                    
                     # Remove all header, footer, and nav elements and their contents
+                    elements_to_remove = []
+                    
+                    # Find all elements to remove
                     for tag in soup.find_all(['header', 'footer', 'nav']):
-                        debug_log(f"Removing {tag.name} element and its contents")
-                        tag.decompose()
+                        elements_to_remove.append(tag)
+                        # Also find any elements with nav-related classes or IDs
+                        for element in soup.find_all(class_=lambda x: x and ('nav' in x.lower() or 'menu' in x.lower())):
+                            elements_to_remove.append(element)
+                        for element in soup.find_all(id=lambda x: x and ('nav' in x.lower() or 'menu' in x.lower())):
+                            elements_to_remove.append(element)
+                    
+                    # Remove all found elements
+                    for element in elements_to_remove:
+                        debug_log(f"\nRemoving element: {element.name}")
+                        if element.get('class'):
+                            debug_log(f"  Classes: {element.get('class')}")
+                        if element.get('id'):
+                            debug_log(f"  ID: {element.get('id')}")
+                        debug_log(f"  Content preview: {element.get_text().strip()[:200]}...")
+                        element.decompose()
+                    
+                    # Verify nav elements are gone
+                    remaining_nav = soup.find_all('nav')
+                    if remaining_nav:
+                        debug_log(f"\nWARNING: Found {len(remaining_nav)} nav elements after removal!")
+                        for i, nav in enumerate(remaining_nav):
+                            debug_log(f"Remaining nav {i+1}: {nav.prettify()[:200]}...")
+                    else:
+                        debug_log("\nAll nav elements successfully removed")
                     
                     # Get the cleaned HTML
                     cleaned_html = str(soup)
-                    debug_log(f"Cleaned HTML length: {len(cleaned_html)} characters")
+                    debug_log(f"\nCleaned HTML length: {len(cleaned_html)} characters")
                     
                     # Now process the cleaned HTML for sections
                     soup = BeautifulSoup(cleaned_html, 'html.parser')
+                    
+                    # Final check for any remaining nav-like content
+                    nav_like_content = soup.find_all(class_=lambda x: x and ('nav' in x.lower() or 'menu' in x.lower()))
+                    if nav_like_content:
+                        debug_log(f"\nWARNING: Found {len(nav_like_content)} elements with nav-like classes after cleaning!")
+                        for i, element in enumerate(nav_like_content):
+                            debug_log(f"Nav-like element {i+1}:")
+                            debug_log(f"  Classes: {element.get('class')}")
+                            debug_log(f"  Content: {element.get_text().strip()[:200]}...")
+                            element.decompose()
                     
                     # Find all heading tags in order
                     headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
@@ -554,6 +598,16 @@ def extract_sections_from_json(json_data):
                     current_content = []
                     
                     for heading in headings:
+                        # Skip headings that might be in navigation
+                        heading_classes = heading.get('class', [])
+                        heading_id = heading.get('id', '')
+                        if any('nav' in str(c).lower() or 'menu' in str(c).lower() for c in heading_classes) or \
+                           'nav' in heading_id.lower() or 'menu' in heading_id.lower():
+                            debug_log(f"\nSkipping navigation heading: {heading.get_text().strip()[:100]}")
+                            debug_log(f"  Classes: {heading_classes}")
+                            debug_log(f"  ID: {heading_id}")
+                            continue
+                        
                         # Get heading text
                         heading_text = heading.get_text().strip()
                         if not heading_text:
@@ -590,6 +644,16 @@ def extract_sections_from_json(json_data):
                                              current.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] and 
                                              int(current.name[1]) <= int(heading.name[1])):
                             if hasattr(current, 'name'):
+                                # Skip elements that might be navigation
+                                if current.get('class') and any('nav' in str(c).lower() or 'menu' in str(c).lower() for c in current.get('class')):
+                                    debug_log(f"Skipping navigation element with classes: {current.get('class')}")
+                                    current = current.next_sibling
+                                    continue
+                                if current.get('id') and ('nav' in current.get('id').lower() or 'menu' in current.get('id').lower()):
+                                    debug_log(f"Skipping navigation element with ID: {current.get('id')}")
+                                    current = current.next_sibling
+                                    continue
+                                
                                 # Get text from any element
                                 text = current.get_text().strip()
                                 if text and len(text.split()) > 2:  # Skip very short text
@@ -623,6 +687,12 @@ def extract_sections_from_json(json_data):
                     content_elements = []
                     for element in body.descendants:
                         if element.name and element.name not in ['script', 'style', 'meta', 'link']:
+                            # Skip navigation elements
+                            if element.get('class') and any('nav' in str(c).lower() or 'menu' in str(c).lower() for c in element.get('class')):
+                                continue
+                            if element.get('id') and ('nav' in element.get('id').lower() or 'menu' in element.get('id').lower()):
+                                continue
+                            
                             text = element.get_text().strip()
                             if text and len(text.split()) > 2:  # Skip very short text
                                 content_elements.append(text)
