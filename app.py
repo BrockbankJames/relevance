@@ -937,13 +937,42 @@ def scrape_webpage(url):
                                 sections = []
                                 current_section = None
                                 current_level = 0
+                                found_first_h1 = False
                                 
-                                # First, find all H1 elements to ensure they start sections
-                                h1_elements = [elem for elem in content_elements if elem['type'] == 'h1']
-                                debug_log(f"\nFound {len(h1_elements)} H1 elements")
+                                # First, find the index of the first H1
+                                first_h1_index = None
+                                for i, elem in enumerate(content_elements):
+                                    if elem['type'] == 'h1':
+                                        first_h1_index = i
+                                        debug_log(f"\nFound first H1 at index {i}: {elem['text'][:100]}")
+                                        break
                                 
                                 # Process elements in order
                                 for i, element in enumerate(content_elements):
+                                    # If we haven't found the first H1 yet, put content in a separate section
+                                    if first_h1_index is not None and i < first_h1_index:
+                                        if element['type'] != 'h1':  # Skip any H1s that might appear before our first H1
+                                            if current_section is None:
+                                                debug_log("\nCreating pre-H1 section for content before first H1")
+                                                current_section = {
+                                                    'type': 'pre-h1',
+                                                    'heading': 'Pre-H1 Content',
+                                                    'text': element['text'],
+                                                    'content': [element['text']],
+                                                    'level': 0
+                                                }
+                                            else:
+                                                debug_log(f"Adding content to pre-H1 section: {element['text'][:100]}")
+                                                current_section['content'].append(element['text'])
+                                                current_section['text'] = ' '.join(current_section['content'])
+                                        
+                                        # If this is the last element before H1, save the pre-H1 section
+                                        if i == first_h1_index - 1 and current_section:
+                                            debug_log("Completing pre-H1 section")
+                                            sections.append(current_section)
+                                            current_section = None
+                                        continue
+                                    
                                     if element['type'] == 'h1':  # Always start new section for H1
                                         debug_log(f"\nFound H1 element: {element['text'][:100]}")
                                         # If we have a current section, save it
@@ -960,9 +989,28 @@ def scrape_webpage(url):
                                             'level': 1
                                         }
                                         current_level = 1
+                                        found_first_h1 = True
                                         debug_log(f"Created new H1 section: {element['text'][:100]}")
                                         
-                                    elif element['type'].startswith('h'):  # Other headings
+                                    elif element['type'] == 'h2' and found_first_h1:  # H2 starts new section after H1
+                                        debug_log(f"\nFound H2 element: {element['text'][:100]}")
+                                        # Save current section (which contains H1 and its content)
+                                        if current_section:
+                                            debug_log(f"Completing H1 section: {current_section['heading'][:100]}")
+                                            sections.append(current_section)
+                                        
+                                        # Start new section with H2
+                                        current_section = {
+                                            'type': 'h2',
+                                            'heading': element['text'],
+                                            'text': element['text'],
+                                            'content': [],
+                                            'level': 2
+                                        }
+                                        current_level = 2
+                                        debug_log(f"Created new H2 section: {element['text'][:100]}")
+                                        
+                                    elif element['type'].startswith('h') and element['type'] not in ['h1', 'h2']:  # Other headings
                                         debug_log(f"\nProcessing heading element: {element['type']}")
                                         debug_log(f"Heading text: {element['text'][:100]}")
                                         debug_log(f"Heading level: {element['level']}")
@@ -987,12 +1035,11 @@ def scrape_webpage(url):
                                         debug_log(f"Adding content to section: {current_section['heading'][:100]}")
                                         current_section['content'].append(element['text'])
                                         current_section['text'] = f"{current_section['heading']} {' '.join(current_section['content'])}"
-                                    else:
-                                        # If we haven't found any headings yet, create a default section
-                                        debug_log("Creating default section for content before first heading")
+                                    elif not found_first_h1:  # If we haven't found H1 yet, create a default section
+                                        debug_log("Creating default section for content before first H1")
                                         current_section = {
-                                            'type': 'content',
-                                            'heading': 'Content Section',
+                                            'type': 'pre-h1',
+                                            'heading': 'Pre-H1 Content',
                                             'text': element['text'],
                                             'content': [element['text']],
                                             'level': 0
@@ -1012,6 +1059,8 @@ def scrape_webpage(url):
                                         debug_log(f"Content items: {len(section['content'])}")
                                         if section['type'] == 'h1':
                                             debug_log("This is an H1 section")
+                                        elif section['type'] == 'pre-h1':
+                                            debug_log("This is a pre-H1 section")
                                     
                                     processed_content.extend(sections)
                                     debug_log(f"\nExtracted {len(sections)} sections from content block {i+1}")
