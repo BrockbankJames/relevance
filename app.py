@@ -876,68 +876,117 @@ def scrape_webpage(url):
                             
                             # Get all text content from the body
                             content_elements = []
+                            debug_log("\nSearching for headings and content...")
+                            
+                            # First, find all headings to establish hierarchy
+                            headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+                            debug_log(f"Found {len(headings)} total headings")
+                            for h in headings:
+                                debug_log(f"Found {h.name} with text: {h.get_text().strip()[:100]}")
+                            
+                            # Process elements in document order
                             for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'article', 'section', 'div']):
                                 if element and element.parent:  # Check if element exists and has a parent
                                     # Skip elements that are part of navigation
                                     if element.get('class'):
                                         classes = element.get('class', [])
+                                        # List of terms to check for in class names
+                                        excluded_terms = [
+                                            'nav', 'navigation', 'navbar', 'nav-menu', 'nav-wrapper', 'nav-container',
+                                            'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy',
+                                            'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper',
+                                            'preference', 'preferences', 'preference-panel', 'preference-modal', 'preference-popup',
+                                            'onetrust'  # Will match any class containing 'onetrust'
+                                        ]
+                                        
+                                        # Check if any class contains any of the excluded terms
                                         if any(
-                                            class_name.lower() in ['nav', 'navigation', 'navbar', 'navbar-nav', 'nav-menu', 'nav-wrapper', 'nav-container', 
-                                                                 'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal',
-                                                                 'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice',
-                                                                 'preference', 'preferences', 'preference-panel', 'preference-modal', 'preference-popup', 'preference-wrapper', 'preference-container', 'preference-box', 'preference-settings', 'preference-menu', 'preference-dialog', 'preference-overlay', 'preference-banner', 'preference-notice']
-                                            or element.get('role') == 'navigation'
-                                            or element.get('aria-label', '').lower() in ['navigation', 'main navigation', 'primary navigation', 
-                                                                                       'cookie consent', 'cookie notice', 'cookie policy',
-                                                                                       'login', 'log in', 'login form', 'login modal', 'login popup', 'login panel', 'login dialog',
-                                                                                       'preference', 'preferences', 'preference panel', 'preference modal', 'preference popup', 'preference settings', 'preference menu', 'preference dialog']
-                                            or element.get('id', '').lower() in ['nav', 'navigation', 'navbar', 'main-nav', 'primary-nav', 
-                                                                               'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal',
-                                                                               'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice',
-                                                                               'preference', 'preferences', 'preference-panel', 'preference-modal', 'preference-popup', 'preference-wrapper', 'preference-container', 'preference-box', 'preference-settings', 'preference-menu', 'preference-dialog', 'preference-overlay', 'preference-banner', 'preference-notice']
+                                            any(term in class_name.lower() for term in excluded_terms)
                                             for class_name in classes
+                                        ) or element.get('role') == 'navigation' or any(
+                                            term in element.get('aria-label', '').lower()
+                                            for term in ['navigation', 'main navigation', 'primary navigation', 
+                                                        'cookie consent', 'cookie notice', 'cookie policy',
+                                                        'login', 'log in', 'login form', 'login modal',
+                                                        'preference', 'preferences', 'preference panel',
+                                                        'onetrust']  # Added onetrust to aria labels
+                                        ) or any(
+                                            term in element.get('id', '').lower()
+                                            for term in excluded_terms + ['main-nav', 'primary-nav']  # Include all terms from excluded_terms
                                         ):
                                             continue
                                     
                                     text = element.get_text().strip()
                                     if text and len(text.split()) > 2:  # Skip very short text
+                                        # For headings, log the hierarchy level
+                                        if element.name.startswith('h'):
+                                            debug_log(f"\nProcessing {element.name} heading: {text[:100]}")
+                                            debug_log(f"Heading level: {int(element.name[1])}")
+                                        
                                         content_elements.append({
                                             'type': element.name,
                                             'text': text,
-                                            'heading': element.name.startswith('h') and text or None
+                                            'heading': element.name.startswith('h') and text or None,
+                                            'level': int(element.name[1]) if element.name.startswith('h') else 0
                                         })
                             
                             if content_elements:
+                                debug_log("\nCreating sections from content elements...")
                                 # Create sections from content elements
                                 sections = []
                                 current_section = None
+                                current_level = 0
                                 
                                 for element in content_elements:
                                     if element['type'].startswith('h'):  # This is a heading
-                                        if current_section:
+                                        debug_log(f"\nProcessing heading element: {element['type']}")
+                                        debug_log(f"Heading text: {element['text'][:100]}")
+                                        debug_log(f"Heading level: {element['level']}")
+                                        
+                                        # If we have a current section and this heading is at same or higher level
+                                        if current_section and element['level'] <= current_level:
+                                            debug_log(f"Completing previous section: {current_section['heading'][:100]}")
                                             sections.append(current_section)
+                                        
+                                        # Start new section
                                         current_section = {
                                             'type': element['type'],
                                             'heading': element['text'],
                                             'text': element['text'],
-                                            'content': []
+                                            'content': [],
+                                            'level': element['level']
                                         }
+                                        current_level = element['level']
+                                        debug_log(f"Created new section with heading: {element['text'][:100]}")
+                                        
                                     elif current_section:
+                                        debug_log(f"Adding content to section: {current_section['heading'][:100]}")
                                         current_section['content'].append(element['text'])
                                         current_section['text'] = f"{current_section['heading']} {' '.join(current_section['content'])}"
                                     else:
                                         # Create a default section for content before first heading
+                                        debug_log("Creating default section for content before first heading")
                                         current_section = {
                                             'type': 'content',
                                             'heading': 'Content Section',
                                             'text': element['text'],
-                                            'content': [element['text']]
+                                            'content': [element['text']],
+                                            'level': 0
                                         }
                                 
                                 if current_section:
+                                    debug_log(f"Adding final section: {current_section['heading'][:100]}")
                                     sections.append(current_section)
                                 
                                 if sections:
+                                    debug_log(f"\nCreated {len(sections)} total sections:")
+                                    for i, section in enumerate(sections):
+                                        debug_log(f"\nSection {i+1}:")
+                                        debug_log(f"Type: {section['type']}")
+                                        debug_log(f"Level: {section.get('level', 0)}")
+                                        debug_log(f"Heading: {section['heading'][:100]}")
+                                        debug_log(f"Content items: {len(section['content'])}")
+                                    
                                     processed_content.extend(sections)
                                     debug_log(f"\nExtracted {len(sections)} sections from content block {i+1}")
                                 else:
@@ -981,23 +1030,31 @@ def scrape_webpage(url):
                         # Skip navigation elements
                         if element.get('class'):
                             classes = element.get('class', [])
+                            # List of terms to check for in class names
+                            excluded_terms = [
+                                'nav', 'navigation', 'navbar', 'nav-menu', 'nav-wrapper', 'nav-container',
+                                'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy',
+                                'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper',
+                                'preference', 'preferences', 'preference-panel', 'preference-modal', 'preference-popup',
+                                'onetrust'  # Will match any class containing 'onetrust'
+                            ]
+                            
+                            # Check if any class contains any of the excluded terms
                             if any(
-                                class_name.lower() in ['nav', 'navigation', 'navbar', 'navbar-nav', 'nav-menu', 'nav-wrapper', 'nav-container', 
-                                                                 'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal',
-                                                                 'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice',
-                                                                 'preference', 'preferences', 'preference-panel', 'preference-modal', 'preference-popup', 'preference-wrapper', 'preference-container', 'preference-box', 'preference-settings', 'preference-menu', 'preference-dialog', 'preference-overlay', 'preference-banner', 'preference-notice']
-                                            or element.get('role') == 'navigation'
-                                            or element.get('aria-label', '').lower() in ['navigation', 'main navigation', 'primary navigation', 
-                                                                                       'cookie consent', 'cookie notice', 'cookie policy',
-                                                                                       'login', 'log in', 'login form', 'login modal', 'login popup', 'login panel', 'login dialog',
-                                                                                       'preference', 'preferences', 'preference panel', 'preference modal', 'preference popup', 'preference settings', 'preference menu', 'preference dialog']
-                                            or element.get('id', '').lower() in ['nav', 'navigation', 'navbar', 'main-nav', 'primary-nav', 
-                                                                               'cookie', 'cookies', 'cookie-banner', 'cookie-notice', 'cookie-consent', 'cookie-policy', 'cookie-bar', 'cookie-warning', 'cookie-popup', 'cookie-modal',
-                                                                               'login', 'log-in', 'login-form', 'login-modal', 'login-popup', 'login-wrapper', 'login-container', 'login-box', 'login-panel', 'login-dialog', 'login-overlay', 'login-banner', 'login-notice',
-                                                                               'preference', 'preferences', 'preference-panel', 'preference-modal', 'preference-popup', 'preference-wrapper', 'preference-container', 'preference-box', 'preference-settings', 'preference-menu', 'preference-dialog', 'preference-overlay', 'preference-banner', 'preference-notice']
-                                            for class_name in classes
-                                        ):
-                                            continue
+                                any(term in class_name.lower() for term in excluded_terms)
+                                for class_name in classes
+                            ) or element.get('role') == 'navigation' or any(
+                                term in element.get('aria-label', '').lower()
+                                for term in ['navigation', 'main navigation', 'primary navigation', 
+                                            'cookie consent', 'cookie notice', 'cookie policy',
+                                            'login', 'log in', 'login form', 'login modal',
+                                            'preference', 'preferences', 'preference panel',
+                                            'onetrust']  # Added onetrust to aria labels
+                            ) or any(
+                                term in element.get('id', '').lower()
+                                for term in excluded_terms + ['main-nav', 'primary-nav']  # Include all terms from excluded_terms
+                            ):
+                                continue
                         
                         text = element.get_text().strip()
                         if text and len(text.split()) > 2:
