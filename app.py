@@ -732,9 +732,10 @@ def scrape_webpage(url):
                         debug_log(f"Content length: {len(content_html)} characters")
                         
                         try:
+                            # Create soup object and immediately remove unwanted elements
                             soup = BeautifulSoup(content_html, 'html.parser')
                             
-                            # Remove header, footer, and nav elements
+                            # Remove all header, footer, and nav elements first
                             for tag in soup.find_all(['header', 'footer', 'nav']):
                                 debug_log(f"Removing {tag.name} element and its contents")
                                 tag.decompose()
@@ -767,7 +768,11 @@ def scrape_webpage(url):
                 return None
         else:
             debug_log("Processing HTML response...")
-            sections = extract_sections(response.content)
+            # For direct HTML responses, create soup and remove unwanted elements
+            soup = BeautifulSoup(response.content, 'html.parser')
+            for tag in soup.find_all(['header', 'footer', 'nav']):
+                tag.decompose()
+            sections = extract_sections(str(soup))
         
         if not sections:
             st.warning("""
