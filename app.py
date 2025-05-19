@@ -260,6 +260,46 @@ def extract_sections(html_content):
     
     return sections
 
+def extract_sections_from_json(json_data):
+    """Extract sections from ScrapingBee JSON response"""
+    debug_log("Processing JSON response...")
+    sections = []
+    
+    try:
+        data = json.loads(json_data)
+        debug_log(f"JSON keys found: {list(data.keys())}")
+        
+        # Process headings
+        if 'headings' in data and isinstance(data['headings'], list):
+            debug_log(f"Found {len(data['headings'])} headings in JSON")
+            for heading in data['headings']:
+                if heading and isinstance(heading, str):
+                    sections.append({
+                        'type': 'h2',  # Default to h2 since we don't know the level
+                        'text': heading.strip()
+                    })
+                    debug_log(f"Added heading: {heading[:100]}")
+        
+        # Process paragraphs
+        if 'paragraphs' in data and isinstance(data['paragraphs'], list):
+            debug_log(f"Found {len(data['paragraphs'])} paragraphs in JSON")
+            for paragraph in data['paragraphs']:
+                if paragraph and isinstance(paragraph, str):
+                    sections.append({
+                        'type': 'p',
+                        'text': paragraph.strip()
+                    })
+                    debug_log(f"Added paragraph: {paragraph[:100]}")
+        
+        debug_log(f"Extracted {len(sections)} total sections from JSON")
+        return sections
+    except json.JSONDecodeError as e:
+        debug_log(f"Error decoding JSON: {str(e)}")
+        return None
+    except Exception as e:
+        debug_log(f"Error processing JSON: {str(e)}")
+        return None
+
 def scrape_webpage(url):
     """Scrape webpage content using ScrapingBee API"""
     api_key = st.secrets["SCRAPINGBEE_API_KEY"]
@@ -323,15 +363,14 @@ def scrape_webpage(url):
         debug_log(f"Response content type: {response.headers.get('content-type', 'unknown')}")
         debug_log(f"Response length: {len(response.content)} bytes")
         
-        # Check if we got HTML content
+        # Check content type and process accordingly
         content_type = response.headers.get('content-type', '').lower()
-        if 'text/html' not in content_type:
-            debug_log(f"Warning: Unexpected content type: {content_type}")
-            debug_log("First 500 characters of response:")
-            debug_log(response.text[:500])
-        
-        # Extract sections using the new function
-        sections = extract_sections(response.content)
+        if 'application/json' in content_type:
+            debug_log("Processing JSON response...")
+            sections = extract_sections_from_json(response.text)
+        else:
+            debug_log("Processing HTML response...")
+            sections = extract_sections(response.content)
         
         if not sections:
             st.warning("""
@@ -342,8 +381,8 @@ def scrape_webpage(url):
             
             Try using a different URL or check if the page is accessible.
             """)
-            debug_log("\nRaw HTML content received:")
-            debug_log(response.text[:1000] + "...")  # Log first 1000 chars of HTML
+            debug_log("\nRaw response content:")
+            debug_log(response.text[:1000] + "...")
         
         return sections
     except Exception as e:
