@@ -1890,7 +1890,6 @@ with tab2:
                     Preview: {result['most_similar_text']}
                     """)
                     
-                    # Show detailed scores for top sections
                     if result['detailed_scores']:
                         st.markdown("**Top 3 Most Similar Sections:**")
                         for j, score in enumerate(result['detailed_scores'][:3], 1):
@@ -2079,18 +2078,17 @@ with tab3:
                     Most similar section: {result['most_similar_section']}  
                     Preview: {result['most_similar_text']}
                     """)
-                        
-                        # Show detailed scores for top sections
-                        if result['detailed_scores']:
-                            st.markdown("**Top 3 Most Similar Sections:**")
-                            for j, score in enumerate(result['detailed_scores'][:3], 1):
-                                st.markdown(f"""
-                                {j}. {score['heading']}  
-                                Similarity: {score['similarity']:.3f}  
-                                Weight: {score['weight']:.3f}  
-                                Length: {score['length']} words  
-                                Preview: {score['text_preview']}
-                                """)
+                    
+                    if result['detailed_scores']:
+                        st.markdown("**Top 3 Most Similar Sections:**")
+                        for j, score in enumerate(result['detailed_scores'][:3], 1):
+                            st.markdown(f"""
+                            {j}. {score['heading']}  
+                            Similarity: {score['similarity']:.3f}  
+                            Weight: {score['weight']:.3f}  
+                            Length: {score['length']} words  
+                            Preview: {score['text_preview']}
+                            """)
                 
                 # Display all URLs in a table
                 st.subheader("All URL Similarities")
