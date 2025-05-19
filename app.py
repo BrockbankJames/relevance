@@ -261,7 +261,7 @@ def extract_sections(html_content):
     return sections
 
 def extract_sections_from_json(json_data):
-    """Extract sections from ScrapingBee JSON response"""
+    """Extract sections from ScrapingBee JSON response, grouping content by headings"""
     debug_log("Processing JSON response...")
     sections = []
     
@@ -269,29 +269,93 @@ def extract_sections_from_json(json_data):
         data = json.loads(json_data)
         debug_log(f"JSON keys found: {list(data.keys())}")
         
-        # Process headings
+        # First, get all headings and paragraphs
+        headings = []
+        paragraphs = []
+        
         if 'headings' in data and isinstance(data['headings'], list):
             debug_log(f"Found {len(data['headings'])} headings in JSON")
             for heading in data['headings']:
                 if heading and isinstance(heading, str):
-                    sections.append({
-                        'type': 'h2',  # Default to h2 since we don't know the level
-                        'text': heading.strip()
+                    # Try to determine heading level from the content
+                    level = 2  # default to h2
+                    if heading.isupper() or len(heading) < 50:  # likely h1
+                        level = 1
+                    headings.append({
+                        'text': heading.strip(),
+                        'level': level
                     })
-                    debug_log(f"Added heading: {heading[:100]}")
+                    debug_log(f"Added heading (level {level}): {heading[:100]}")
         
-        # Process paragraphs
         if 'paragraphs' in data and isinstance(data['paragraphs'], list):
             debug_log(f"Found {len(data['paragraphs'])} paragraphs in JSON")
             for paragraph in data['paragraphs']:
                 if paragraph and isinstance(paragraph, str):
-                    sections.append({
-                        'type': 'p',
-                        'text': paragraph.strip()
-                    })
+                    paragraphs.append(paragraph.strip())
                     debug_log(f"Added paragraph: {paragraph[:100]}")
         
-        debug_log(f"Extracted {len(sections)} total sections from JSON")
+        # If we have main content HTML, try to extract more content
+        if 'main_content' in data and data['main_content']:
+            debug_log("Processing main content HTML...")
+            for content_html in data['main_content']:
+                if content_html:
+                    soup = BeautifulSoup(content_html, 'html.parser')
+                    # Extract headings with their levels
+                    for tag in soup.find_all(['h1', 'h2', 'h3']):
+                        if tag.get_text().strip():
+                            level = int(tag.name[1])  # h1 -> 1, h2 -> 2, etc.
+                            headings.append({
+                                'text': tag.get_text().strip(),
+                                'level': level
+                            })
+                            debug_log(f"Added heading from HTML (level {level}): {tag.get_text().strip()[:100]}")
+                    # Extract paragraphs
+                    for p in soup.find_all('p'):
+                        if p.get_text().strip():
+                            paragraphs.append(p.get_text().strip())
+                            debug_log(f"Added paragraph from HTML: {p.get_text().strip()[:100]}")
+        
+        # Sort headings by their position in the content
+        headings.sort(key=lambda x: x['text'])
+        
+        # Group content into sections
+        current_section = None
+        current_content = []
+        
+        for heading in headings:
+            # If we have a current section, save it
+            if current_section:
+                current_section['text'] = f"{current_section['heading']} {' '.join(current_content)}"
+                sections.append(current_section)
+                debug_log(f"Completed section: {current_section['heading'][:100]}")
+            
+            # Start new section
+            current_section = {
+                'type': f"h{heading['level']}",
+                'heading': heading['text'],
+                'text': '',
+                'content': []
+            }
+            current_content = []
+            debug_log(f"\nStarting new section with heading: {heading['text'][:100]}")
+        
+        # Add remaining paragraphs to the last section
+        if current_section:
+            current_content.extend(paragraphs)
+            current_section['text'] = f"{current_section['heading']} {' '.join(current_content)}"
+            sections.append(current_section)
+            debug_log(f"Completed final section: {current_section['heading'][:100]}")
+        elif paragraphs:  # If no headings but we have paragraphs
+            sections.append({
+                'type': 'p',
+                'text': ' '.join(paragraphs)
+            })
+            debug_log("Created section from paragraphs only")
+        
+        debug_log(f"\nExtracted {len(sections)} total sections")
+        for i, section in enumerate(sections):
+            debug_log(f"Section {i+1} ({section['type']}): {section['text'][:100]}...")
+        
         return sections
     except json.JSONDecodeError as e:
         debug_log(f"Error decoding JSON: {str(e)}")
@@ -376,34 +440,6 @@ def scrape_webpage(url):
         if 'application/json' in content_type:
             debug_log("Processing JSON response...")
             sections = extract_sections_from_json(response.text)
-            
-            # If we got main content HTML, try to extract more content from it
-            try:
-                data = json.loads(response.text)
-                if 'main_content' in data and data['main_content']:
-                    debug_log("Found main content HTML, attempting to extract additional content...")
-                    # Use BeautifulSoup to parse the main content HTML
-                    for content_html in data['main_content']:
-                        if content_html:
-                            soup = BeautifulSoup(content_html, 'html.parser')
-                            # Extract any additional headings we might have missed
-                            for heading in soup.find_all(['h1', 'h2', 'h3']):
-                                if heading.get_text().strip():
-                                    sections.append({
-                                        'type': heading.name,
-                                        'text': heading.get_text().strip()
-                                    })
-                                    debug_log(f"Added heading from main content: {heading.get_text().strip()[:100]}")
-                            # Extract any additional paragraphs we might have missed
-                            for p in soup.find_all('p'):
-                                if p.get_text().strip():
-                                    sections.append({
-                                        'type': 'p',
-                                        'text': p.get_text().strip()
-                                    })
-                                    debug_log(f"Added paragraph from main content: {p.get_text().strip()[:100]}")
-            except Exception as e:
-                debug_log(f"Error processing main content HTML: {str(e)}")
         else:
             debug_log("Processing HTML response...")
             sections = extract_sections(response.content)
@@ -419,6 +455,10 @@ def scrape_webpage(url):
             """)
             debug_log("\nRaw response content:")
             debug_log(response.text[:1000] + "...")
+        
+        # Filter out very short sections
+        sections = [s for s in sections if len(s['text'].split()) > 3]
+        debug_log(f"\nAfter filtering short sections: {len(sections)} sections remaining")
         
         return sections
     except Exception as e:
@@ -670,6 +710,9 @@ with tab3:
     else:
         st.warning("Please enter at least one URL to analyze.")
 
+# Add footer
+st.markdown("---")
+st.markdown("Built with Streamlit and Google's Vertex AI text-embedding-005 model") 
 # Add footer
 st.markdown("---")
 st.markdown("Built with Streamlit and Google's Vertex AI text-embedding-005 model") 
