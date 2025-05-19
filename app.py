@@ -884,6 +884,7 @@ def scrape_webpage(url):
                             debug_log(f"Found {len(headings)} total headings")
                             
                             # Process elements in document order, handling containers with H1s specially
+                            processed_h1s = set()  # Track processed H1 elements
                             for element in soup.find_all(['div', 'section', 'article', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
                                 if element and element.parent:  # Check if element exists and has a parent
                                     # Skip elements that are part of navigation
@@ -918,7 +919,7 @@ def scrape_webpage(url):
                                     # Special handling for containers that might have H1s
                                     if element.name in ['div', 'section', 'article']:
                                         h1_in_container = element.find('h1')
-                                        if h1_in_container:
+                                        if h1_in_container and h1_in_container not in processed_h1s:
                                             debug_log(f"\nFound container with H1: {element.get('class', [])}")
                                             # Get all text content from this container
                                             container_text = []
@@ -938,21 +939,39 @@ def scrape_webpage(url):
                                                     'level': 1,
                                                     'is_container': True
                                                 })
+                                                processed_h1s.add(h1_in_container)  # Mark this H1 as processed
                                             continue
                                     
                                     # Regular element processing
-                                    text = element.get_text().strip()
-                                    if text and len(text.split()) > 2:  # Skip very short text
-                                        if element.name.startswith('h'):
-                                            debug_log(f"\nProcessing {element.name} heading: {text[:100]}")
-                                            debug_log(f"Heading level: {int(element.name[1])}")
-                                        
-                                        content_elements.append({
-                                            'type': element.name,
-                                            'text': text,
-                                            'heading': element.name.startswith('h') and text or None,
-                                            'level': int(element.name[1]) if element.name.startswith('h') else 0
-                                        })
+                                    if element.name == 'h1':
+                                        if element not in processed_h1s:  # Only process H1 if not already processed
+                                            text = element.get_text().strip()
+                                            if text and len(text.split()) > 2:
+                                                content_elements.append({
+                                                    'type': 'h1',
+                                                    'text': text,
+                                                    'heading': text,
+                                                    'level': 1
+                                                })
+                                                processed_h1s.add(element)  # Mark this H1 as processed
+                                    elif element.name.startswith('h'):  # Process other headings normally
+                                        text = element.get_text().strip()
+                                        if text and len(text.split()) > 2:
+                                            content_elements.append({
+                                                'type': element.name,
+                                                'text': text,
+                                                'heading': text,
+                                                'level': int(element.name[1])
+                                            })
+                                    else:  # Process non-heading elements
+                                        text = element.get_text().strip()
+                                        if text and len(text.split()) > 2:
+                                            content_elements.append({
+                                                'type': element.name,
+                                                'text': text,
+                                                'heading': None,
+                                                'level': 0
+                                            })
                             
                             if content_elements:
                                 debug_log("\nCreating sections from content elements...")
