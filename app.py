@@ -519,15 +519,31 @@ def extract_sections_from_json(json_data):
             debug_log("Processing main content HTML...")
             debug_log(f"Number of main_content items: {len(data['main_content'])}")
             
-            for i, content_html in enumerate(data['main_content']):
-                if not content_html:
-                    continue
-                    
-                debug_log(f"\nProcessing content_html {i+1}:")
-                debug_log(f"Content length: {len(content_html)} characters")
+            # First, combine all content and remove unwanted elements
+            combined_html = ''
+            for content_html in data['main_content']:
+                if content_html:
+                    combined_html += content_html
+            
+            if combined_html:
+                debug_log("\nProcessing combined HTML content...")
+                debug_log(f"Combined content length: {len(combined_html)} characters")
                 
                 try:
-                    soup = BeautifulSoup(content_html, 'html.parser')
+                    # Create a single soup object from all content
+                    soup = BeautifulSoup(combined_html, 'html.parser')
+                    
+                    # Remove all header, footer, and nav elements and their contents
+                    for tag in soup.find_all(['header', 'footer', 'nav']):
+                        debug_log(f"Removing {tag.name} element and its contents")
+                        tag.decompose()
+                    
+                    # Get the cleaned HTML
+                    cleaned_html = str(soup)
+                    debug_log(f"Cleaned HTML length: {len(cleaned_html)} characters")
+                    
+                    # Now process the cleaned HTML for sections
+                    soup = BeautifulSoup(cleaned_html, 'html.parser')
                     
                     # Find all heading tags in order
                     headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
@@ -593,18 +609,15 @@ def extract_sections_from_json(json_data):
                             debug_log(f"Content items: {len(current_section['content'])}")
                     
                 except Exception as e:
-                    debug_log(f"Error processing content_html {i+1}: {str(e)}")
-                    continue
+                    debug_log(f"Error processing HTML content: {str(e)}")
+                    return None
         
-        # If no sections found, try to get content from the JSON data
-        if not sections and 'main_content' in data and data['main_content']:
-            debug_log("\nNo sections found with headings, trying content from JSON...")
+        # If no sections found, try to get content from the cleaned HTML
+        if not sections:
+            debug_log("\nNo sections found with headings, trying content from cleaned HTML...")
             try:
-                # Create a temporary soup from all main content
-                temp_soup = BeautifulSoup(''.join(data['main_content']), 'html.parser')
-                
                 # Get all text content from the body
-                body = temp_soup.find('body')
+                body = soup.find('body')
                 if body:
                     # Get all text nodes and elements
                     content_elements = []
