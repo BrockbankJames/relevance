@@ -20,6 +20,17 @@ st.set_page_config(
 # Add debug mode
 DEBUG = True
 
+# Add supported regions
+SUPPORTED_REGIONS = {
+    'asia-east1', 'europe-west8', 'europe-west3', 'europe-west2', 'europe-west9',
+    'europe-central2', 'us-central1', 'asia-northeast3', 'us-east4', 'australia-southeast2',
+    'europe-west1', 'us-west3', 'asia-east2', 'southamerica-west1', 'europe-north1',
+    'us-east1', 'me-west1', 'asia-southeast1', 'us-west1', 'australia-southeast1',
+    'northamerica-northeast1', 'asia-south1', 'asia-northeast1', 'europe-west6',
+    'europe-west4', 'northamerica-northeast2', 'southamerica-east1', 'us-west4',
+    'asia-northeast2', 'asia-southeast2', 'us-south1', 'us-west2', 'europe-southwest1'
+}
+
 def debug_log(message):
     """Print debug messages if DEBUG is True"""
     if DEBUG:
@@ -64,7 +75,13 @@ def init_vertex_ai():
         
         # Get project and location
         project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
-        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'us-central1')
+        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'europe-west1')  # Changed default to europe-west1
+        
+        # Validate location
+        if location not in SUPPORTED_REGIONS:
+            st.error(f"Unsupported region: {location}. Please use one of: {', '.join(sorted(SUPPORTED_REGIONS))}")
+            return False
+            
         debug_log(f"Using project: {project_id}, location: {location}")
         
         # Initialize Vertex AI
@@ -82,7 +99,7 @@ def init_vertex_ai():
         Please make sure you have set up the following in your Streamlit secrets:
         1. GOOGLE_APPLICATION_CREDENTIALS_JSON: Your service account key JSON
         2. GOOGLE_CLOUD_PROJECT: Your Google Cloud project ID
-        3. GOOGLE_CLOUD_LOCATION: Your preferred location (default: us-central1)
+        3. GOOGLE_CLOUD_LOCATION: Your preferred location (default: europe-west1)
         
         Current secrets status:
         - GOOGLE_APPLICATION_CREDENTIALS_JSON: {'present': 'GOOGLE_APPLICATION_CREDENTIALS_JSON' in st.secrets}
@@ -107,10 +124,15 @@ def get_embedding(text):
         
         # Get project and location from secrets
         project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
-        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'us-central1')
+        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'europe-west1')  # Changed default to europe-west1
         
         if not project_id:
             st.error("GOOGLE_CLOUD_PROJECT not found in secrets")
+            return None
+            
+        # Validate location
+        if location not in SUPPORTED_REGIONS:
+            st.error(f"Unsupported region: {location}. Please use one of: {', '.join(sorted(SUPPORTED_REGIONS))}")
             return None
             
         # Initialize the model
