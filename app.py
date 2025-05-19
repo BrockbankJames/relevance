@@ -1515,7 +1515,8 @@ with tab1:
     keyword_input = st.text_area(
         "Enter your keyword:",
         height=100,
-        placeholder="Type or paste your keyword here..."
+        placeholder="Type or paste your keyword here...",
+        key="tab1_keyword_input"  # Added unique key
     )
     
     if keyword_input:
@@ -1594,14 +1595,16 @@ with tab2:
     # Input for cluster name
     cluster_name = st.text_input(
         "Enter cluster name:",
-        placeholder="e.g., Car Insurance Terms, Home Insurance Keywords, etc."
+        placeholder="e.g., Car Insurance Terms, Home Insurance Keywords, etc.",
+        key="tab2_cluster_name"  # Added unique key
     )
     
     # Input for keywords
     keywords_input = st.text_area(
         "Enter keywords (one per line):",
         height=200,
-        placeholder="Enter your keywords here, one per line...\ne.g.,\ncar insurance\nauto insurance\nvehicle insurance"
+        placeholder="Enter your keywords here, one per line...\ne.g.,\ncar insurance\nauto insurance\nvehicle insurance",
+        key="tab2_keywords_input"  # Added unique key
     )
     
     if cluster_name and keywords_input:
@@ -1719,14 +1722,16 @@ with tab3:
         "Select embedding source:",
         ["Single Keyword", "Keyword Cluster"],
         horizontal=True,
-        help="Choose whether to analyze the webpage against a single keyword or a cluster of keywords"
+        help="Choose whether to analyze the webpage against a single keyword or a cluster of keywords",
+        key="tab3_embedding_source"  # Added unique key
     )
     
     # Input fields based on selection
     if embedding_source == "Single Keyword":
         keyword_input = st.text_input(
             "Enter keyword:",
-            placeholder="Enter your keyword here..."
+            placeholder="Enter your keyword here...",
+            key="tab3_single_keyword"  # Added unique key
         )
         embedding_to_use = None
         if keyword_input:
@@ -1740,12 +1745,14 @@ with tab3:
         # Get cluster name and keywords
         cluster_name = st.text_input(
             "Enter cluster name:",
-            placeholder="e.g., Car Insurance Terms, Home Insurance Keywords, etc."
+            placeholder="e.g., Car Insurance Terms, Home Insurance Keywords, etc.",
+            key="tab3_cluster_name"  # Added unique key
         )
         keywords_input = st.text_area(
             "Enter keywords (one per line):",
             height=150,
-            placeholder="Enter your keywords here, one per line...\ne.g.,\ncar insurance\nauto insurance\nvehicle insurance"
+            placeholder="Enter your keywords here, one per line...\ne.g.,\ncar insurance\nauto insurance\nvehicle insurance",
+            key="tab3_keywords_input"  # Added unique key
         )
         
         if cluster_name and keywords_input:
@@ -1785,7 +1792,11 @@ with tab3:
             embedding_to_use = None
     
     # URL input
-    url_input = st.text_input("Enter webpage URL:", placeholder="https://example.com")
+    url_input = st.text_input(
+        "Enter webpage URL:",
+        placeholder="https://example.com",
+        key="tab3_url_input"  # Added unique key
+    )
     
     if url_input and embedding_to_use is not None:
         with st.spinner("Scraping webpage..."):
@@ -1944,7 +1955,8 @@ with tab4:
     urls_input = st.text_area(
         "Enter URLs (one per line):",
         height=150,
-        placeholder="https://example1.com\nhttps://example2.com\nhttps://example3.com"
+        placeholder="https://example1.com\nhttps://example2.com\nhttps://example3.com",
+        key="tab4_urls_input"  # Added unique key
     )
     
     if urls_input:
@@ -2142,13 +2154,18 @@ with tab5:
     """)
     
     # Get keyword input
-    keyword_input = st.text_input("Enter keyword:", placeholder="Enter your keyword here...")
+    keyword_input = st.text_input(
+        "Enter keyword:",
+        placeholder="Enter your keyword here...",
+        key="tab5_keyword_input"  # Added unique key
+    )
     
     # Get URLs input
     urls_input = st.text_area(
         "Enter URLs to compare (one per line, max 10):",
         height=150,
-        placeholder="https://example1.com\nhttps://example2.com\nhttps://example3.com"
+        placeholder="https://example1.com\nhttps://example2.com\nhttps://example3.com",
+        key="tab5_urls_input"  # Added unique key
     )
     
     if keyword_input and urls_input:
