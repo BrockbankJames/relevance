@@ -893,13 +893,47 @@ def scrape_webpage(url):
                             debug_log(f"\nFound {len(all_h1s)} H1 elements:")
                             for h1 in all_h1s:
                                 debug_log(f"H1 text: {h1.get_text().strip()[:100]}")
+                                debug_log(f"H1 HTML: {h1.prettify()[:200]}")
                             
-                            # Process elements in document order
-                            for element in soup.find_all(['div', 'section', 'article', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+                            # Create sections list to store all sections
+                            sections = []
+                            
+                            # First pass: Create H1 sections
+                            for h1 in all_h1s:
+                                if h1 not in processed_h1s:
+                                    debug_log(f"\nProcessing H1 element: {h1.get_text().strip()[:100]}")
+                                    h1_text = h1.get_text().strip()
+                                    if h1_text and len(h1_text.split()) > 2:
+                                        # Create H1 section
+                                        h1_section = {
+                                            'type': 'h1',
+                                            'heading': h1_text,
+                                            'text': h1_text,
+                                            'content': [],
+                                            'level': 1
+                                        }
+                                        sections.append(h1_section)
+                                        processed_h1s.add(h1)
+                                        debug_log(f"Created H1 section: {h1_text[:100]}")
+                                        
+                                        # Get content until next heading
+                                        current = h1.next_sibling
+                                        while current and not (hasattr(current, 'name') and 
+                                                             current.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+                                            if hasattr(current, 'name'):
+                                                text = current.get_text().strip()
+                                                if text and len(text.split()) > 2:
+                                                    h1_section['content'].append(text)
+                                                    h1_section['text'] = f"{h1_section['heading']} {' '.join(h1_section['content'])}"
+                                                    debug_log(f"Added content to H1 section: {text[:100]}")
+                                            current = current.next_sibling
+                            
+                            # Second pass: Process remaining elements
+                            for element in soup.find_all(['div', 'section', 'article', 'p', 'h2', 'h3', 'h4', 'h5', 'h6']):
                                 if element and element.parent:  # Check if element exists and has a parent
                                     debug_log(f"\nProcessing element: {element.name}")
                                     
-                                    # Skip elements that are part of navigation
+                                    # Skip elements that are part of navigation or already processed
                                     if element.get('class'):
                                         classes = element.get('class', [])
                                         # List of terms to check for in class names
@@ -929,96 +963,48 @@ def scrape_webpage(url):
                                             debug_log(f"Skipping excluded element: {element.name}")
                                             continue
                                     
-                                    # Special handling for containers that might have H1s
-                                    if element.name in ['div', 'section', 'article']:
-                                        h1_in_container = element.find('h1')
-                                        if h1_in_container and h1_in_container not in processed_h1s:
-                                            debug_log(f"\nFound container with H1: {element.get('class', [])}")
-                                            # Get all text content from this container
-                                            container_text = []
-                                            for child in element.descendants:
-                                                if child.name and child.name not in ['script', 'style', 'meta', 'link']:
-                                                    text = child.get_text().strip()
-                                                    if text and len(text.split()) > 2:
-                                                        container_text.append(text)
-                                            
-                                            if container_text:
-                                                debug_log(f"Container text content: {container_text[0][:100]}")
-                                                # Create a new H1 section with all container content
-                                                h1_section = {
-                                                    'type': 'h1-container',
-                                                    'text': ' '.join(container_text),
-                                                    'heading': container_text[0],  # Use first text as heading
-                                                    'content': container_text[1:],  # Rest as content
-                                                    'level': 1,
-                                                    'is_container': True
-                                                }
-                                                content_elements.append(h1_section)
-                                                debug_log(f"Added H1 container section: {h1_section['heading'][:100]}")
-                                                processed_h1s.add(h1_in_container)  # Mark this H1 as processed
-                                            continue
+                                    # Skip if this element is part of an H1 container that was already processed
+                                    if any(h1 in processed_h1s for h1 in element.find_all('h1')):
+                                        debug_log(f"Skipping element in processed H1 container: {element.name}")
+                                        continue
                                     
-                                    # Regular element processing
-                                    if element.name == 'h1':
-                                        if element not in processed_h1s:  # Only process H1 if not already processed
-                                            text = element.get_text().strip()
-                                            if text and len(text.split()) > 2:
-                                                debug_log(f"\nProcessing H1 element: {text[:100]}")
-                                                # Start a new H1 section
-                                                h1_section = {
-                                                    'type': 'h1',
-                                                    'text': text,
-                                                    'heading': text,
-                                                    'content': [],
-                                                    'level': 1
-                                                }
-                                                content_elements.append(h1_section)
-                                                current_h1_section = h1_section  # Set as current section
-                                                processed_h1s.add(element)  # Mark this H1 as processed
-                                                debug_log(f"Created new H1 section: {text[:100]}")
-                                    elif element.name.startswith('h'):  # Process other headings
-                                        # If we have a current H1 section, complete it
-                                        if current_h1_section and element.name == 'h2':
-                                            debug_log(f"Completing H1 section before H2: {current_h1_section['heading'][:100]}")
-                                            current_h1_section = None
-                                        
+                                    # Process remaining elements
+                                    if element.name.startswith('h'):  # Process other headings
                                         text = element.get_text().strip()
                                         if text and len(text.split()) > 2:
                                             debug_log(f"Processing {element.name} heading: {text[:100]}")
-                                            content_elements.append({
+                                            sections.append({
                                                 'type': element.name,
-                                                'text': text,
                                                 'heading': text,
+                                                'text': text,
                                                 'content': [],
                                                 'level': int(element.name[1])
                                             })
                                     else:  # Process non-heading elements
                                         text = element.get_text().strip()
                                         if text and len(text.split()) > 2:
-                                            if current_h1_section:  # Add content to current H1 section
-                                                debug_log(f"Adding content to H1 section: {text[:100]}")
-                                                current_h1_section['content'].append(text)
-                                                current_h1_section['text'] = f"{current_h1_section['heading']} {' '.join(current_h1_section['content'])}"
-                                            else:  # Create a regular content element
-                                                debug_log(f"Creating regular content element: {text[:100]}")
-                                                content_elements.append({
-                                                    'type': element.name,
-                                                    'text': text,
-                                                    'heading': None,
-                                                    'content': [text],
-                                                    'level': 0
-                                                })
+                                            debug_log(f"Creating regular content element: {text[:100]}")
+                                            sections.append({
+                                                'type': element.name,
+                                                'text': text,
+                                                'heading': None,
+                                                'content': [text],
+                                                'level': 0
+                                            })
                             
-                            # Verify H1 sections were created
+                            # Verify H1 sections
                             debug_log("\nVerifying H1 sections:")
-                            h1_sections = [s for s in content_elements if s['type'] in ['h1', 'h1-container']]
+                            h1_sections = [s for s in sections if s['type'] == 'h1']
                             debug_log(f"Found {len(h1_sections)} H1 sections:")
                             for i, section in enumerate(h1_sections, 1):
                                 debug_log(f"\nH1 Section {i}:")
-                                debug_log(f"Type: {section['type']}")
                                 debug_log(f"Heading: {section['heading'][:100]}")
-                                debug_log(f"Content items: {len(section.get('content', []))}")
+                                debug_log(f"Content items: {len(section['content'])}")
                                 debug_log(f"Full text length: {len(section['text'])}")
+                                debug_log(f"Content preview: {section['text'][:200]}")
+                            
+                            # Use sections instead of content_elements
+                            content_elements = sections
                             
                             if content_elements:
                                 debug_log("\nCreating sections from content elements...")
