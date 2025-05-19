@@ -328,14 +328,22 @@ def scrape_webpage(url):
             'wait': '5000',  # Wait 5 seconds for JavaScript
             'wait_for': 'body',  # Wait for body element
             'block_resources': 'true',  # Block unnecessary resources
-            'extract_rules': json.dumps({  # Extract specific elements
+            'extract_rules': json.dumps({
+                # Target main content area, excluding nav, header, footer
+                'main_content': {
+                    'selector': 'main, article, .main-content, .content, #content, .article, [role="main"]',
+                    'type': 'list',
+                    'output': 'html'
+                },
+                # Extract headings from main content only
                 'headings': {
-                    'selector': 'h1, h2, h3, h4, h5, h6',
+                    'selector': 'main h1, main h2, main h3, article h1, article h2, article h3, .main-content h1, .main-content h2, .main-content h3, #content h1, #content h2, #content h3, .article h1, .article h2, .article h3, [role="main"] h1, [role="main"] h2, [role="main"] h3',
                     'type': 'list',
                     'output': 'text'
                 },
+                # Extract paragraphs from main content only
                 'paragraphs': {
-                    'selector': 'p',
+                    'selector': 'main p, article p, .main-content p, #content p, .article p, [role="main"] p',
                     'type': 'list',
                     'output': 'text'
                 }
@@ -368,6 +376,34 @@ def scrape_webpage(url):
         if 'application/json' in content_type:
             debug_log("Processing JSON response...")
             sections = extract_sections_from_json(response.text)
+            
+            # If we got main content HTML, try to extract more content from it
+            try:
+                data = json.loads(response.text)
+                if 'main_content' in data and data['main_content']:
+                    debug_log("Found main content HTML, attempting to extract additional content...")
+                    # Use BeautifulSoup to parse the main content HTML
+                    for content_html in data['main_content']:
+                        if content_html:
+                            soup = BeautifulSoup(content_html, 'html.parser')
+                            # Extract any additional headings we might have missed
+                            for heading in soup.find_all(['h1', 'h2', 'h3']):
+                                if heading.get_text().strip():
+                                    sections.append({
+                                        'type': heading.name,
+                                        'text': heading.get_text().strip()
+                                    })
+                                    debug_log(f"Added heading from main content: {heading.get_text().strip()[:100]}")
+                            # Extract any additional paragraphs we might have missed
+                            for p in soup.find_all('p'):
+                                if p.get_text().strip():
+                                    sections.append({
+                                        'type': 'p',
+                                        'text': p.get_text().strip()
+                                    })
+                                    debug_log(f"Added paragraph from main content: {p.get_text().strip()[:100]}")
+            except Exception as e:
+                debug_log(f"Error processing main content HTML: {str(e)}")
         else:
             debug_log("Processing HTML response...")
             sections = extract_sections(response.content)
