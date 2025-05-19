@@ -532,11 +532,19 @@ def extract_sections_from_json(json_data):
                 try:
                     soup = BeautifulSoup(content_html, 'html.parser')
                     
-                    # Remove header, footer, nav, and other non-content elements
-                    for tag in soup.find_all(['header', 'footer', 'nav', 'aside', 'script', 'style', 'noscript']):
+                    # First, remove all header, footer, nav, and other non-content elements
+                    # This is done before any content extraction to ensure we only process main content
+                    for tag in soup.find_all(['header', 'footer', 'nav', 'aside']):
+                        debug_log(f"Removing {tag.name} element")
                         tag.decompose()
                     
-                    # Also remove elements with common non-content classes
+                    # Also remove any elements that are children of header/footer/nav
+                    for parent in soup.find_all(['header', 'footer', 'nav']):
+                        for child in parent.find_all():
+                            debug_log(f"Removing child element {child.name} from {parent.name}")
+                            child.decompose()
+                    
+                    # Remove elements with common non-content classes
                     non_content_classes = [
                         'header', 'footer', 'nav', 'menu', 'sidebar', 'widget', 'advertisement',
                         'banner', 'promo', 'cookie-notice', 'popup', 'modal', 'overlay',
@@ -553,11 +561,26 @@ def extract_sections_from_json(json_data):
                         'sitemap'
                     ]
                     
+                    # Remove elements with non-content classes
                     for tag in soup.find_all(class_=lambda x: x and any(cls in str(x).lower() for cls in non_content_classes)):
+                        debug_log(f"Removing element with non-content class: {tag.get('class', [])}")
                         tag.decompose()
                     
-                    # Extract headings with their actual levels from HTML tags
+                    # Remove elements that are children of non-content elements
+                    for parent in soup.find_all(class_=lambda x: x and any(cls in str(x).lower() for cls in non_content_classes)):
+                        for child in parent.find_all():
+                            debug_log(f"Removing child element {child.name} from non-content parent")
+                            child.decompose()
+                    
+                    # Now extract headings only from the cleaned content
                     for tag in soup.find_all(['h1', 'h2', 'h3']):
+                        # Skip if the heading is inside a non-content element
+                        if any(parent.name in ['header', 'footer', 'nav'] or 
+                              (parent.get('class') and any(cls in str(parent.get('class')).lower() for cls in non_content_classes))
+                              for parent in tag.parents):
+                            debug_log(f"Skipping heading in non-content element: {tag.get_text().strip()[:100]}")
+                            continue
+                            
                         heading_text = tag.get_text().strip()
                         if heading_text:
                             level = int(tag.name[1])  # h1 -> 1, h2 -> 2, etc.
@@ -565,7 +588,7 @@ def extract_sections_from_json(json_data):
                                 'text': heading_text,
                                 'level': level,
                                 'html_tag': tag.name,
-                                'position': len(headings),  # Keep track of original position
+                                'position': len(headings),
                                 'parent_tag': tag.parent.name if tag.parent else None,
                                 'parent_class': tag.parent.get('class', []) if tag.parent else None
                             })
@@ -573,13 +596,20 @@ def extract_sections_from_json(json_data):
                             debug_log(f"  Parent tag: {tag.parent.name if tag.parent else 'None'}")
                             debug_log(f"  Parent class: {tag.parent.get('class', []) if tag.parent else 'None'}")
                     
-                    # Extract paragraphs
+                    # Extract paragraphs only from the cleaned content
                     for p in soup.find_all('p'):
+                        # Skip if the paragraph is inside a non-content element
+                        if any(parent.name in ['header', 'footer', 'nav'] or 
+                              (parent.get('class') and any(cls in str(parent.get('class')).lower() for cls in non_content_classes))
+                              for parent in p.parents):
+                            debug_log(f"Skipping paragraph in non-content element: {p.get_text().strip()[:100]}")
+                            continue
+                            
                         paragraph_text = p.get_text().strip()
                         if paragraph_text:
                             paragraphs.append({
                                 'text': paragraph_text,
-                                'position': len(paragraphs),  # Keep track of position
+                                'position': len(paragraphs),
                                 'parent_tag': p.parent.name if p.parent else None,
                                 'parent_class': p.parent.get('class', []) if p.parent else None
                             })
@@ -596,6 +626,10 @@ def extract_sections_from_json(json_data):
             debug_log("No headings found in HTML, using headings list...")
             for heading in data['headings']:
                 if heading and isinstance(heading, str):
+                    # Skip headings that look like they're from header/footer
+                    if any(non_content in heading.lower() for non_content in ['menu', 'navigation', 'header', 'footer', 'copyright']):
+                        debug_log(f"Skipping non-content heading: {heading[:100]}")
+                        continue
                     headings.append({
                         'text': heading.strip(),
                         'level': 2,  # Default to h2
@@ -609,6 +643,10 @@ def extract_sections_from_json(json_data):
             debug_log(f"Found {len(data['paragraphs'])} paragraphs in JSON")
             for paragraph in data['paragraphs']:
                 if paragraph and isinstance(paragraph, str):
+                    # Skip paragraphs that look like they're from header/footer
+                    if any(non_content in paragraph.lower() for non_content in ['menu', 'navigation', 'header', 'footer', 'copyright']):
+                        debug_log(f"Skipping non-content paragraph: {paragraph[:100]}")
+                        continue
                     paragraphs.append({
                         'text': paragraph.strip(),
                         'position': len(paragraphs)
