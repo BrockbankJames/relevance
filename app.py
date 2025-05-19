@@ -402,28 +402,78 @@ def extract_sections_from_json(json_data):
         # Process main content HTML first to get proper heading levels
         if 'main_content' in data and data['main_content']:
             debug_log("Processing main content HTML...")
-            for content_html in data['main_content']:
-                if content_html:
+            debug_log(f"Number of main_content items: {len(data['main_content'])}")
+            
+            for i, content_html in enumerate(data['main_content']):
+                if not content_html:
+                    debug_log(f"Skipping empty content_html at index {i}")
+                    continue
+                    
+                debug_log(f"\nProcessing content_html {i+1}:")
+                debug_log(f"Content length: {len(content_html)} characters")
+                debug_log(f"First 200 characters: {content_html[:200]}")
+                
+                try:
                     soup = BeautifulSoup(content_html, 'html.parser')
+                    
+                    # Remove header, footer, nav, and other non-content elements
+                    for tag in soup.find_all(['header', 'footer', 'nav', 'aside', 'script', 'style', 'noscript']):
+                        tag.decompose()
+                    
+                    # Also remove elements with common non-content classes
+                    non_content_classes = [
+                        'header', 'footer', 'nav', 'menu', 'sidebar', 'widget', 'advertisement',
+                        'banner', 'promo', 'cookie-notice', 'popup', 'modal', 'overlay',
+                        'newsletter', 'subscription', 'social-share', 'related-posts',
+                        'comments', 'recommendations', 'trending', 'popular', 'featured',
+                        'latest', 'recent', 'preview', 'list-item', 'card', 'teaser',
+                        'summary', 'excerpt', 'snippet', 'thumbnail', 'image', 'video',
+                        'gallery', 'carousel', 'slider', 'tabs', 'accordion', 'dropdown',
+                        'tooltip', 'notification', 'alert', 'message', 'status', 'progress',
+                        'loading', 'spinner', 'icon', 'button', 'link', 'badge', 'label',
+                        'tag', 'category', 'meta', 'author', 'date', 'time', 'location',
+                        'price', 'rating', 'review', 'comment', 'share', 'like', 'follow',
+                        'subscribe', 'search', 'filter', 'sort', 'pagination', 'breadcrumb',
+                        'sitemap'
+                    ]
+                    
+                    for tag in soup.find_all(class_=lambda x: x and any(cls in str(x).lower() for cls in non_content_classes)):
+                        tag.decompose()
+                    
                     # Extract headings with their actual levels from HTML tags
                     for tag in soup.find_all(['h1', 'h2', 'h3']):
-                        if tag.get_text().strip():
+                        heading_text = tag.get_text().strip()
+                        if heading_text:
                             level = int(tag.name[1])  # h1 -> 1, h2 -> 2, etc.
                             headings.append({
-                                'text': tag.get_text().strip(),
+                                'text': heading_text,
                                 'level': level,
                                 'html_tag': tag.name,
-                                'position': len(headings)  # Keep track of original position
+                                'position': len(headings),  # Keep track of original position
+                                'parent_tag': tag.parent.name if tag.parent else None,
+                                'parent_class': tag.parent.get('class', []) if tag.parent else None
                             })
-                            debug_log(f"Added heading from HTML ({tag.name}): {tag.get_text().strip()[:100]}")
+                            debug_log(f"Added heading from HTML ({tag.name}): {heading_text[:100]}")
+                            debug_log(f"  Parent tag: {tag.parent.name if tag.parent else 'None'}")
+                            debug_log(f"  Parent class: {tag.parent.get('class', []) if tag.parent else 'None'}")
+                    
                     # Extract paragraphs
                     for p in soup.find_all('p'):
-                        if p.get_text().strip():
+                        paragraph_text = p.get_text().strip()
+                        if paragraph_text:
                             paragraphs.append({
-                                'text': p.get_text().strip(),
-                                'position': len(paragraphs)  # Keep track of position
+                                'text': paragraph_text,
+                                'position': len(paragraphs),  # Keep track of position
+                                'parent_tag': p.parent.name if p.parent else None,
+                                'parent_class': p.parent.get('class', []) if p.parent else None
                             })
-                            debug_log(f"Added paragraph from HTML: {p.get_text().strip()[:100]}")
+                            debug_log(f"Added paragraph from HTML: {paragraph_text[:100]}")
+                            debug_log(f"  Parent tag: {p.parent.name if p.parent else 'None'}")
+                            debug_log(f"  Parent class: {p.parent.get('class', []) if p.parent else 'None'}")
+                            
+                except Exception as e:
+                    debug_log(f"Error processing content_html {i+1}: {str(e)}")
+                    continue
         
         # If we didn't get any headings from HTML, fall back to the headings list
         if not headings and 'headings' in data and isinstance(data['headings'], list):
@@ -438,7 +488,8 @@ def extract_sections_from_json(json_data):
                     })
                     debug_log(f"Added heading from list (h2): {heading[:100]}")
         
-        if 'paragraphs' in data and isinstance(data['paragraphs'], list):
+        # Process paragraphs from JSON if we didn't get enough from HTML
+        if len(paragraphs) < 3 and 'paragraphs' in data and isinstance(data['paragraphs'], list):
             debug_log(f"Found {len(data['paragraphs'])} paragraphs in JSON")
             for paragraph in data['paragraphs']:
                 if paragraph and isinstance(paragraph, str):
@@ -450,6 +501,8 @@ def extract_sections_from_json(json_data):
         
         # Sort all content by position
         all_content = sorted(headings + paragraphs, key=lambda x: x['position'])
+        debug_log(f"\nTotal content items found: {len(all_content)}")
+        debug_log(f"Headings: {len(headings)}, Paragraphs: {len(paragraphs)}")
         
         # Group content into sections based on H2 tags
         current_section = None
@@ -459,6 +512,12 @@ def extract_sections_from_json(json_data):
         
         for item in all_content:
             if 'html_tag' in item:  # This is a heading
+                # Skip headings that are part of navigation or previews
+                if item.get('parent_class') and any(cls in str(item['parent_class']).lower() 
+                                                  for cls in ['nav', 'menu', 'preview', 'list-item']):
+                    debug_log(f"Skipping navigation/preview heading: {item['text'][:100]}")
+                    continue
+                    
                 if item['html_tag'] == 'h1':
                     # If we have a current section, save it
                     if current_section:
@@ -520,6 +579,12 @@ def extract_sections_from_json(json_data):
                     debug_log(f"\nStarting new H2 section: {item['text'][:100]}")
                 
                 elif item['html_tag'] == 'h3':
+                    # Skip H3s that are part of navigation or previews
+                    if item.get('parent_class') and any(cls in str(item['parent_class']).lower() 
+                                                      for cls in ['nav', 'menu', 'preview', 'list-item']):
+                        debug_log(f"Skipping navigation/preview H3: {item['text'][:100]}")
+                        continue
+                        
                     # If we have a current H3 section, save it
                     if current_h3_section:
                         current_h3_section['text'] = f"{current_h3_section['heading']} {' '.join(current_h3_content)}"
@@ -536,6 +601,12 @@ def extract_sections_from_json(json_data):
                     debug_log(f"  Starting new H3 subsection: {item['text'][:100]}")
             
             else:  # This is a paragraph
+                # Skip paragraphs that are part of navigation or previews
+                if item.get('parent_class') and any(cls in str(item['parent_class']).lower() 
+                                                  for cls in ['nav', 'menu', 'preview', 'list-item']):
+                    debug_log(f"Skipping navigation/preview paragraph: {item['text'][:100]}")
+                    continue
+                    
                 if current_h3_section:
                     current_h3_content.append(item['text'])
                     current_h3_section['content'].append(item['text'])
@@ -586,6 +657,8 @@ def extract_sections_from_json(json_data):
         return None
     except Exception as e:
         debug_log(f"Error processing JSON: {str(e)}")
+        debug_log(f"Error type: {type(e)}")
+        debug_log(f"Full error: {repr(e)}")
         return None
 
 def scrape_webpage(url):
@@ -617,21 +690,69 @@ def scrape_webpage(url):
             'wait_for': 'body',  # Wait for body element
             'block_resources': 'true',  # Block unnecessary resources
             'extract_rules': json.dumps({
-                # Target main content area, excluding nav, header, footer
+                # Target main content area, explicitly excluding header, footer, nav, etc.
                 'main_content': {
-                    'selector': 'main, article, .main-content, .content, #content, .article, [role="main"]',
+                    'selector': '''
+                        body > *:not(header):not(footer):not(nav):not(.header):not(.footer):not(.navigation):not(.nav):not(.menu):not(.sidebar):not(.widget):not(.advertisement):not(.banner):not(.promo):not(.cookie-notice):not(.popup):not(.modal):not(.overlay):not(.newsletter):not(.subscription):not(.social-share):not(.related-posts):not(.comments):not(.recommendations):not(.trending):not(.popular):not(.featured):not(.latest):not(.recent):not(.preview):not(.list-item):not(.card):not(.teaser):not(.summary):not(.excerpt):not(.snippet):not(.thumbnail):not(.image):not(.video):not(.gallery):not(.carousel):not(.slider):not(.tabs):not(.accordion):not(.dropdown):not(.tooltip):not(.notification):not(.alert):not(.message):not(.status):not(.progress):not(.loading):not(.spinner):not(.icon):not(.button):not(.link):not(.badge):not(.label):not(.tag):not(.category):not(.meta):not(.author):not(.date):not(.time):not(.location):not(.price):not(.rating):not(.review):not(.comment):not(.share):not(.like):not(.follow):not(.subscribe):not(.search):not(.filter):not(.sort):not(.pagination):not(.breadcrumb):not(.sitemap)
+                    ''',
                     'type': 'list',
                     'output': 'html'
                 },
-                # Extract headings from main content only
+                # Extract headings from main content only, excluding header/footer
                 'headings': {
-                    'selector': 'main h1, main h2, main h3, article h1, article h2, article h3, .main-content h1, .main-content h2, .main-content h3, #content h1, #content h2, #content h3, .article h1, .article h2, .article h3, [role="main"] h1, [role="main"] h2, [role="main"] h3',
+                    'selector': '''
+                        body > *:not(header):not(footer):not(nav) h1,
+                        body > *:not(header):not(footer):not(nav) h2,
+                        body > *:not(header):not(footer):not(nav) h3,
+                        article h1,
+                        article h2,
+                        article h3,
+                        .article-content h1,
+                        .article-content h2,
+                        .article-content h3,
+                        .article-body h1,
+                        .article-body h2,
+                        .article-body h3,
+                        .post-content h1,
+                        .post-content h2,
+                        .post-content h3,
+                        .entry-content h1,
+                        .entry-content h2,
+                        .entry-content h3,
+                        main article h1,
+                        main article h2,
+                        main article h3,
+                        [role="main"] article h1,
+                        [role="main"] article h2,
+                        [role="main"] article h3,
+                        .main-content article h1,
+                        .main-content article h2,
+                        .main-content article h3,
+                        #content article h1,
+                        #content article h2,
+                        #content article h3,
+                        .article h1,
+                        .article h2,
+                        .article h3
+                    ''',
                     'type': 'list',
                     'output': 'text'
                 },
-                # Extract paragraphs from main content only
+                # Extract paragraphs from main content only, excluding header/footer
                 'paragraphs': {
-                    'selector': 'main p, article p, .main-content p, #content p, .article p, [role="main"] p',
+                    'selector': '''
+                        body > *:not(header):not(footer):not(nav) p,
+                        article p,
+                        .article-content p,
+                        .article-body p,
+                        .post-content p,
+                        .entry-content p,
+                        main article p,
+                        [role="main"] article p,
+                        .main-content article p,
+                        #content article p,
+                        .article p
+                    ''',
                     'type': 'list',
                     'output': 'text'
                 }
@@ -663,7 +784,28 @@ def scrape_webpage(url):
         content_type = response.headers.get('content-type', '').lower()
         if 'application/json' in content_type:
             debug_log("Processing JSON response...")
-            sections = extract_sections_from_json(response.text)
+            try:
+                data = json.loads(response.text)
+                debug_log(f"JSON keys found: {list(data.keys())}")
+                
+                # Check if we got article previews instead of main content
+                if 'main_content' in data and data['main_content']:
+                    preview_count = sum(1 for content in data['main_content'] 
+                                     if 'goco-c-newsfeed__list-item' in content)
+                    if preview_count > 0:
+                        debug_log(f"Found {preview_count} article previews")
+                        st.warning("""
+                        The page appears to be a list of article previews rather than a full article.
+                        Please try using the direct URL to a specific article instead.
+                        """)
+                        return None
+                
+                sections = extract_sections_from_json(response.text)
+            except json.JSONDecodeError as e:
+                debug_log(f"Error decoding JSON: {str(e)}")
+                debug_log("Raw response content:")
+                debug_log(response.text[:1000] + "...")
+                return None
         else:
             debug_log("Processing HTML response...")
             sections = extract_sections(response.content)
@@ -674,11 +816,13 @@ def scrape_webpage(url):
             1. The page is blocking access
             2. The page has no text content
             3. The page structure is different than expected
+            4. The page is a list of article previews
             
             Try using a different URL or check if the page is accessible.
             """)
             debug_log("\nRaw response content:")
             debug_log(response.text[:1000] + "...")
+            return None
         
         # Filter out very short sections
         sections = [s for s in sections if len(s['text'].split()) > 3]
