@@ -105,9 +105,21 @@ def get_embedding(text):
         debug_log("Starting embedding generation...")
         debug_log(f"Input text length: {len(text)} characters")
         
+        # Get project and location from secrets
+        project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
+        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'us-central1')
+        
+        if not project_id:
+            st.error("GOOGLE_CLOUD_PROJECT not found in secrets")
+            return None
+            
         # Initialize the model
         debug_log("Initializing model...")
-        model = aiplatform.Model("textembedding-gecko@latest")
+        # Use the correct model endpoint with project ID from secrets
+        model_endpoint = f"projects/{project_id}/locations/{location}/publishers/google/models/textembedding-gecko@001"
+        debug_log(f"Using model endpoint: {model_endpoint}")
+        
+        model = aiplatform.Model(model_endpoint)
         debug_log("Model initialized successfully")
         
         # Get embeddings
@@ -116,7 +128,6 @@ def get_embedding(text):
         debug_log("Embeddings generated successfully")
         
         # Extract the embedding from the response
-        # The response format is different for the gecko model
         embedding = np.array(response.predictions[0])
         debug_log(f"Embedding shape: {embedding.shape}")
         return embedding
