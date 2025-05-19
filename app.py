@@ -17,6 +17,14 @@ st.set_page_config(
     layout="centered"
 )
 
+# Add debug mode
+DEBUG = True
+
+def debug_log(message):
+    """Print debug messages if DEBUG is True"""
+    if DEBUG:
+        st.write(f"Debug: {message}")
+
 # Add title and description
 st.title("Google Vertex AI Embedding Generator")
 st.markdown("""
@@ -28,21 +36,45 @@ You can either enter a keyword or a webpage URL to analyze content similarity.
 @st.cache_resource
 def init_vertex_ai():
     try:
+        debug_log("Starting Vertex AI initialization...")
+        
         # Try to get credentials from Streamlit secrets
         if 'GOOGLE_APPLICATION_CREDENTIALS_JSON' in st.secrets:
-            # Create credentials from JSON string
-            credentials_info = json.loads(st.secrets['GOOGLE_APPLICATION_CREDENTIALS_JSON'])
-            credentials = service_account.Credentials.from_service_account_info(credentials_info)
+            debug_log("Found credentials in Streamlit secrets")
+            try:
+                # Create credentials from JSON string
+                credentials_info = json.loads(st.secrets['GOOGLE_APPLICATION_CREDENTIALS_JSON'])
+                debug_log("Successfully parsed credentials JSON")
+                credentials = service_account.Credentials.from_service_account_info(credentials_info)
+                debug_log("Successfully created credentials object")
+            except json.JSONDecodeError as e:
+                st.error(f"Error parsing credentials JSON: {str(e)}")
+                return False
+            except Exception as e:
+                st.error(f"Error creating credentials: {str(e)}")
+                return False
         else:
-            # Try to use default credentials
-            credentials, project = google.auth.default()
+            debug_log("No credentials found in Streamlit secrets, trying default credentials")
+            try:
+                credentials, project = google.auth.default()
+                debug_log("Successfully got default credentials")
+            except Exception as e:
+                st.error(f"Error getting default credentials: {str(e)}")
+                return False
+        
+        # Get project and location
+        project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
+        location = st.secrets.get('GOOGLE_CLOUD_LOCATION', 'us-central1')
+        debug_log(f"Using project: {project_id}, location: {location}")
         
         # Initialize Vertex AI
+        debug_log("Initializing Vertex AI...")
         aiplatform.init(
             credentials=credentials,
-            project=st.secrets.get('GOOGLE_CLOUD_PROJECT', None),
-            location=st.secrets.get('GOOGLE_CLOUD_LOCATION', 'us-central1')
+            project=project_id,
+            location=location
         )
+        debug_log("Vertex AI initialization complete!")
         return True
     except Exception as e:
         st.error(f"Error initializing Vertex AI: {str(e)}")
@@ -51,26 +83,45 @@ def init_vertex_ai():
         1. GOOGLE_APPLICATION_CREDENTIALS_JSON: Your service account key JSON
         2. GOOGLE_CLOUD_PROJECT: Your Google Cloud project ID
         3. GOOGLE_CLOUD_LOCATION: Your preferred location (default: us-central1)
+        
+        Current secrets status:
+        - GOOGLE_APPLICATION_CREDENTIALS_JSON: {'present': 'GOOGLE_APPLICATION_CREDENTIALS_JSON' in st.secrets}
+        - GOOGLE_CLOUD_PROJECT: {'present': 'GOOGLE_CLOUD_PROJECT' in st.secrets}
+        - GOOGLE_CLOUD_LOCATION: {'present': 'GOOGLE_CLOUD_LOCATION' in st.secrets}
         """)
         return False
 
-# Initialize Vertex AI
-if not init_vertex_ai():
-    st.stop()
+# Initialize Vertex AI with spinner
+with st.spinner("Initializing Vertex AI..."):
+    debug_log("Starting app initialization...")
+    if not init_vertex_ai():
+        st.error("Failed to initialize Vertex AI. Please check the error messages above.")
+        st.stop()
+    debug_log("App initialization complete!")
 
 def get_embedding(text):
     """Generate embedding using Vertex AI text-embedding-005 model"""
     try:
+        debug_log("Starting embedding generation...")
+        debug_log(f"Input text length: {len(text)} characters")
+        
         # Initialize the model
+        debug_log("Initializing model...")
         model = aiplatform.TextEmbeddingModel.from_pretrained("textembedding-gecko@latest")
+        debug_log("Model initialized successfully")
         
         # Get embeddings
+        debug_log("Getting embeddings...")
         embeddings = model.get_embeddings([text])
+        debug_log("Embeddings generated successfully")
         
         # Return the first (and only) embedding
-        return np.array(embeddings[0].values)
+        embedding = np.array(embeddings[0].values)
+        debug_log(f"Embedding shape: {embedding.shape}")
+        return embedding
     except Exception as e:
         st.error(f"Error generating embedding: {str(e)}")
+        debug_log(f"Error details: {str(e)}")
         return None
 
 def scrape_webpage(url):
