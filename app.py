@@ -531,21 +531,29 @@ def extract_sections_from_json(json_data):
                 try:
                     soup = BeautifulSoup(content_html, 'html.parser')
                     
-                    # First, remove all header, footer, nav, and other non-content elements
-                    # This is done before any content extraction to ensure we only process main content
-                    for tag in soup.find_all(['header', 'footer', 'nav', 'aside']):
-                        debug_log(f"Removing {tag.name} element and its children")
+                    # FIRST: Remove entire header and footer elements and their contents
+                    # This must be done before any other processing
+                    for tag in soup.find_all(['header', 'footer']):
+                        debug_log(f"REMOVING ENTIRE {tag.name.upper()} ELEMENT AND ALL ITS CONTENTS")
+                        debug_log(f"Header/Footer content that will be removed: {tag.get_text()[:200]}")
                         tag.decompose()
                     
-                    # Also remove any elements that are children of header/footer/nav
+                    # SECOND: Remove any remaining nav elements
+                    for tag in soup.find_all('nav'):
+                        debug_log(f"REMOVING ENTIRE NAV ELEMENT AND ALL ITS CONTENTS")
+                        debug_log(f"Nav content that will be removed: {tag.get_text()[:200]}")
+                        tag.decompose()
+                    
+                    # THIRD: Remove any elements that are children of header/footer/nav
+                    # This catches any elements that might have been missed
                     for parent in soup.find_all(['header', 'footer', 'nav']):
                         for child in parent.find_all():
                             debug_log(f"Removing child element {child.name} from {parent.name}")
                             child.decompose()
                     
-                    # Remove elements with common non-content classes
+                    # FOURTH: Remove elements with common non-content classes
                     non_content_classes = [
-                        'header', 'footer', 'nav', 'menu', 'sidebar', 'widget', 'advertisement',
+                        'header', 'footer', 'nav', 'menu', 'navigation', 'sidebar', 'widget', 'advertisement',
                         'banner', 'promo', 'cookie-notice', 'popup', 'modal', 'overlay',
                         'newsletter', 'subscription', 'social-share', 'related-posts',
                         'comments', 'recommendations', 'trending', 'popular', 'featured',
@@ -557,7 +565,9 @@ def extract_sections_from_json(json_data):
                         'tag', 'category', 'meta', 'author', 'date', 'time', 'location',
                         'price', 'rating', 'review', 'comment', 'share', 'like', 'follow',
                         'subscribe', 'search', 'filter', 'sort', 'pagination', 'breadcrumb',
-                        'sitemap'
+                        'sitemap', 'navbar', 'topbar', 'bottombar', 'menubar', 'toolbar',
+                        'navigation-menu', 'main-menu', 'sub-menu', 'dropdown-menu',
+                        'mobile-menu', 'desktop-menu', 'header-menu', 'footer-menu'
                     ]
                     
                     # Remove elements with non-content classes
@@ -574,16 +584,25 @@ def extract_sections_from_json(json_data):
                     # Now extract headings only from the cleaned content
                     for tag in soup.find_all(['h1', 'h2', 'h3']):
                         # Skip if the heading is inside a non-content element
-                        if any(parent.name in ['header', 'footer', 'nav'] or 
-                              (parent.get('class') and any(cls in str(parent.get('class')).lower() for cls in non_content_classes))
-                              for parent in tag.parents):
-                            debug_log(f"Skipping heading in non-content element: {tag.get_text().strip()[:100]}")
+                        is_in_non_content = False
+                        for parent in tag.parents:
+                            if parent.name in ['header', 'footer', 'nav', 'menu'] or \
+                               (parent.get('class') and any(cls in str(parent.get('class')).lower() 
+                                                         for cls in non_content_classes)):
+                                is_in_non_content = True
+                                debug_log(f"Skipping heading in non-content element: {tag.get_text().strip()[:100]}")
+                                debug_log(f"  Parent: {parent.name}, Classes: {parent.get('class', [])}")
+                                break
+                        
+                        if is_in_non_content:
                             continue
                             
-                        # Skip if the heading's text suggests it's from header/footer
+                        # Skip if the heading's text suggests it's from header/footer/menu
                         heading_text = tag.get_text().strip()
                         if any(non_content in heading_text.lower() for non_content in 
-                              ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use']):
+                              ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use',
+                               'home', 'about', 'contact', 'services', 'products', 'login', 'sign up', 'register',
+                               'search', 'cart', 'account', 'profile', 'settings', 'help', 'support', 'faq']):
                             debug_log(f"Skipping non-content heading: {heading_text[:100]}")
                             continue
                             
@@ -604,16 +623,25 @@ def extract_sections_from_json(json_data):
                     # Extract paragraphs only from the cleaned content
                     for p in soup.find_all('p'):
                         # Skip if the paragraph is inside a non-content element
-                        if any(parent.name in ['header', 'footer', 'nav'] or 
-                              (parent.get('class') and any(cls in str(parent.get('class')).lower() for cls in non_content_classes))
-                              for parent in p.parents):
-                            debug_log(f"Skipping paragraph in non-content element: {p.get_text().strip()[:100]}")
+                        is_in_non_content = False
+                        for parent in p.parents:
+                            if parent.name in ['header', 'footer', 'nav', 'menu'] or \
+                               (parent.get('class') and any(cls in str(parent.get('class')).lower() 
+                                                         for cls in non_content_classes)):
+                                is_in_non_content = True
+                                debug_log(f"Skipping paragraph in non-content element: {p.get_text().strip()[:100]}")
+                                debug_log(f"  Parent: {parent.name}, Classes: {parent.get('class', [])}")
+                                break
+                        
+                        if is_in_non_content:
                             continue
                             
-                        # Skip if the paragraph's text suggests it's from header/footer
+                        # Skip if the paragraph's text suggests it's from header/footer/menu
                         paragraph_text = p.get_text().strip()
                         if any(non_content in paragraph_text.lower() for non_content in 
-                              ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use']):
+                              ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use',
+                               'home', 'about', 'contact', 'services', 'products', 'login', 'sign up', 'register',
+                               'search', 'cart', 'account', 'profile', 'settings', 'help', 'support', 'faq']):
                             debug_log(f"Skipping non-content paragraph: {paragraph_text[:100]}")
                             continue
                             
