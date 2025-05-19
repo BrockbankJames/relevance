@@ -375,7 +375,7 @@ def get_cached_embedding(texts, batch_size=250):
                     st.session_state.embeddings_cache[text_hashes[indices_to_generate[i]]] = embedding
                     cached_embeddings.append(embedding)
             else:
-                # Single embedding case - convert to list for consistent processing
+                # Single embedding case
                 if not isinstance(new_embeddings, np.ndarray):
                     try:
                         new_embeddings = np.array(new_embeddings, dtype=np.float32)
@@ -385,7 +385,6 @@ def get_cached_embedding(texts, batch_size=250):
                 if new_embeddings.ndim != 1:
                     debug_log(f"Invalid single new embedding dimension: {new_embeddings.ndim}")
                     return None
-                # Store in cache and add to list
                 st.session_state.embeddings_cache[text_hashes[indices_to_generate[0]]] = new_embeddings
                 cached_embeddings.append(new_embeddings)
             
