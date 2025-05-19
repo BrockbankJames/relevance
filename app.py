@@ -506,7 +506,7 @@ def extract_sections(html_content):
     return sections
 
 def extract_sections_from_json(json_data):
-    """Extract sections from ScrapingBee JSON response, grouping content by H2 tags"""
+    """Extract sections from ScrapingBee JSON response, maintaining proper heading hierarchy"""
     debug_log("Processing JSON response...")
     sections = []
     
@@ -514,11 +514,6 @@ def extract_sections_from_json(json_data):
         data = json.loads(json_data)
         debug_log(f"JSON keys found: {list(data.keys())}")
         
-        # First, get all headings and paragraphs from the main content HTML
-        headings = []
-        paragraphs = []
-        
-        # Process main content HTML first to get proper heading levels
         if 'main_content' in data and data['main_content']:
             debug_log("Processing main content HTML...")
             debug_log(f"Number of main_content items: {len(data['main_content'])}")
@@ -561,16 +556,15 @@ def extract_sections_from_json(json_data):
                         debug_log(f"Removing element with non-content class: {tag.get('class', [])}")
                         tag.decompose()
                     
-                    # Find all heading tags and their content
-                    current_section = None
-                    current_content = []
-                    current_h3_section = None
-                    current_h3_content = []
+                    # Find all heading tags to establish hierarchy
+                    headings = soup.find_all(['h1', 'h2', 'h3'])
+                    debug_log(f"\nFound {len(headings)} heading tags")
                     
-                    for tag in soup.find_all(['h1', 'h2', 'h3', 'p']):
-                        # Skip if the tag is inside a non-content element
+                    # Process each heading and its content
+                    for i, heading in enumerate(headings):
+                        # Skip if the heading is inside a non-content element
                         is_in_non_content = False
-                        for parent in tag.parents:
+                        for parent in heading.parents:
                             if parent.name in ['header', 'footer', 'nav', 'menu'] or \
                                (parent.get('class') and any(cls in str(parent.get('class')).lower() 
                                                          for cls in non_content_classes)):
@@ -578,99 +572,114 @@ def extract_sections_from_json(json_data):
                                 break
                         
                         if is_in_non_content:
+                            debug_log(f"Skipping heading in non-content element: {heading.get_text().strip()[:100]}")
                             continue
                         
-                        # Skip if the tag's text suggests it's from header/footer/menu
-                        tag_text = tag.get_text().strip()
-                        if any(non_content in tag_text.lower() for non_content in 
+                        # Get heading text
+                        heading_text = heading.get_text().strip()
+                        if not heading_text:
+                            continue
+                            
+                        # Skip if the heading's text suggests it's from header/footer/menu
+                        if any(non_content in heading_text.lower() for non_content in 
                               ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use',
                                'home', 'about', 'contact', 'services', 'products', 'login', 'sign up', 'register',
                                'search', 'cart', 'account', 'profile', 'settings', 'help', 'support', 'faq']):
+                            debug_log(f"Skipping non-content heading: {heading_text[:100]}")
                             continue
                         
                         # Skip very short headings that are likely navigation items
-                        if tag.name in ['h1', 'h2', 'h3'] and len(tag_text.split()) <= 2:
+                        if len(heading_text.split()) <= 2:
+                            debug_log(f"Skipping short heading: {heading_text[:100]}")
                             continue
                         
-                        if tag.name in ['h1', 'h2']:
-                            # Save current section if it exists
-                            if current_section:
-                                if current_h3_section:
-                                    current_h3_section['text'] = f"{current_h3_section['heading']} {' '.join(current_h3_content)}"
-                                    current_section['subsections'].append(current_h3_section)
-                                current_section['text'] = f"{current_section['heading']} {' '.join(current_content)}"
-                                sections.append(current_section)
-                                debug_log(f"Completed section: {current_section['heading'][:100]}")
-                                debug_log(f"Section text length: {len(current_section['text'])} characters")
+                        # Create new section
+                        current_section = {
+                            'type': heading.name,
+                            'heading': heading_text,
+                            'text': heading_text,  # Initialize with heading text
+                            'content': [],
+                            'subsections': []
+                        }
+                        
+                        debug_log(f"\nProcessing {heading.name} section: {heading_text[:100]}")
+                        
+                        # Get all content until next heading of same or higher level
+                        current = heading.next_sibling
+                        current_h3_section = None
+                        current_h3_content = []
+                        
+                        while current and not (hasattr(current, 'name') and 
+                                             current.name in ['h1', 'h2', 'h3'] and 
+                                             int(current.name[1]) <= int(heading.name[1])):
                             
-                            # Start new section
-                            current_section = {
-                                'type': tag.name,
-                                'heading': tag_text,
-                                'text': '',
-                                'content': [],
-                                'subsections': []
-                            }
-                            current_content = []
-                            current_h3_section = None
-                            current_h3_content = []
-                            debug_log(f"\nStarting new {tag.name} section: {tag_text[:100]}")
+                            if hasattr(current, 'name'):
+                                if current.name == 'h3':
+                                    # Save previous h3 section if it exists
+                                    if current_h3_section:
+                                        current_h3_section['text'] = f"{current_h3_section['heading']} {' '.join(current_h3_content)}"
+                                        current_section['subsections'].append(current_h3_section)
+                                    
+                                    # Start new h3 subsection
+                                    h3_text = current.get_text().strip()
+                                    if h3_text:
+                                        current_h3_section = {
+                                            'type': 'h3',
+                                            'heading': h3_text,
+                                            'text': h3_text,
+                                            'content': []
+                                        }
+                                        current_h3_content = []
+                                        debug_log(f"  Starting new H3 subsection: {h3_text[:100]}")
+                                
+                                elif current.name == 'p':
+                                    text = current.get_text().strip()
+                                    if text:
+                                        if current_h3_section:
+                                            current_h3_content.append(text)
+                                            current_h3_section['content'].append(text)
+                                            debug_log(f"  Added paragraph to H3 section: {text[:100]}")
+                                        else:
+                                            current_section['content'].append(text)
+                                            debug_log(f"Added paragraph to main section: {text[:100]}")
                             
-                        elif tag.name == 'h3':
-                            # Save current H3 section if it exists
-                            if current_h3_section:
-                                current_h3_section['text'] = f"{current_h3_section['heading']} {' '.join(current_h3_content)}"
-                                current_section['subsections'].append(current_h3_section)
-                            
-                            # Start new H3 subsection
-                            current_h3_section = {
-                                'type': 'h3',
-                                'heading': tag_text,
-                                'text': '',
-                                'content': []
-                            }
-                            current_h3_content = []
-                            debug_log(f"  Starting new H3 subsection: {tag_text[:100]}")
-                            
-                        elif tag.name == 'p':
-                            # Add paragraph to appropriate section
-                            if current_h3_section:
-                                current_h3_content.append(tag_text)
-                                current_h3_section['content'].append(tag_text)
-                                debug_log(f"  Added paragraph to H3 section: {tag_text[:100]}")
-                            else:
-                                current_content.append(tag_text)
-                                current_section['content'].append(tag_text)
-                                debug_log(f"Added paragraph to main section: {tag_text[:100]}")
-                    
-                    # Save the last section
-                    if current_section:
+                            current = current.next_sibling
+                        
+                        # Save final h3 section if it exists
                         if current_h3_section:
                             current_h3_section['text'] = f"{current_h3_section['heading']} {' '.join(current_h3_content)}"
                             current_section['subsections'].append(current_h3_section)
-                        current_section['text'] = f"{current_section['heading']} {' '.join(current_content)}"
+                        
+                        # Combine all content for the section
+                        if current_section['content']:
+                            current_section['text'] = f"{current_section['heading']} {' '.join(current_section['content'])}"
+                        
+                        # Add section to list
                         sections.append(current_section)
-                        debug_log(f"Completed final section: {current_section['heading'][:100]}")
+                        debug_log(f"Completed section: {current_section['heading'][:100]}")
                         debug_log(f"Section text length: {len(current_section['text'])} characters")
+                        if current_section['subsections']:
+                            debug_log(f"Contains {len(current_section['subsections'])} subsections")
                     
                 except Exception as e:
                     debug_log(f"Error processing content_html {i+1}: {str(e)}")
                     continue
         
-        # If no sections found, try to get paragraphs
-        if not sections:
-            debug_log("\nNo sections found with headings, trying paragraphs only...")
-            for p in soup.find_all('p'):
-                text = p.get_text().strip()
-                if text and len(text.split()) > 2:  # Skip very short paragraphs
-                    sections.append({
-                        'type': 'p',
-                        'heading': 'Content Section',
-                        'text': text,
-                        'content': [text],
-                        'subsections': []
-                    })
-                    debug_log(f"Added paragraph section: {text[:100]}")
+        # If no sections found, try to get paragraphs from the JSON data
+        if not sections and 'paragraphs' in data and isinstance(data['paragraphs'], list):
+            debug_log("\nNo sections found with headings, trying paragraphs from JSON...")
+            for paragraph in data['paragraphs']:
+                if paragraph and isinstance(paragraph, str):
+                    text = paragraph.strip()
+                    if text and len(text.split()) > 2:  # Skip very short paragraphs
+                        sections.append({
+                            'type': 'p',
+                            'heading': 'Content Section',
+                            'text': text,
+                            'content': [text],
+                            'subsections': []
+                        })
+                        debug_log(f"Added paragraph section: {text[:100]}")
         
         debug_log(f"\nExtracted {len(sections)} total sections")
         for i, section in enumerate(sections):
