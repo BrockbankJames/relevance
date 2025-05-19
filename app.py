@@ -533,42 +533,12 @@ def extract_sections_from_json(json_data):
                     # Create a single soup object from all content
                     soup = BeautifulSoup(combined_html, 'html.parser')
                     
-                    # Remove all script and style elements
-                    for element in soup.find_all(['script', 'style']):
-                        element.decompose()
-                    
-                    # Find and remove navigation elements by tag and class
-                    nav_elements = []
-                    
-                    # Find elements by tag
-                    for tag in ['header', 'footer', 'nav']:
-                        elements = soup.find_all(tag)
-                        if elements:
-                            nav_elements.extend(elements)
-                    
-                    # Find elements by class (case-insensitive)
-                    nav_classes = ['nav', 'navigation', 'menu', 'masthead', 'cookie', 'breadcrumb', 'footer']
-                    for element in soup.find_all(class_=True):
-                        if element and element.name:  # Ensure element is not None and has a name
-                            classes = ' '.join(element.get('class', [])).lower()
-                            if any(nav_class in classes for nav_class in nav_classes):
-                                nav_elements.append(element)
-                    
-                    # Log and remove found navigation elements
-                    if nav_elements:
-                        debug_log(f"\nFound {len(nav_elements)} navigation elements:")
-                        for elem in nav_elements:
-                            if elem and elem.name:  # Ensure element is not None and has a name
-                                debug_log(f"\nRemoving navigation element:")
-                                debug_log(f"Tag: {elem.name}")
-                                debug_log(f"Classes: {elem.get('class', [])}")
-                                debug_log(f"ID: {elem.get('id', 'None')}")
-                                debug_log(f"Parent: {elem.parent.name if elem.parent else 'None'}")
-                                debug_log(f"Content: {elem.get_text().strip()[:200]}")
-                                try:
-                                    elem.decompose()
-                                except Exception as e:
-                                    debug_log(f"Error removing element: {str(e)}")
+                    # Simply remove header, nav, and footer elements
+                    for tag in ['header', 'nav', 'footer']:
+                        for element in soup.find_all(tag):
+                            debug_log(f"\nRemoving {tag} element:")
+                            debug_log(f"Content: {element.get_text().strip()[:200]}")
+                            element.decompose()
                     
                     # Get the cleaned HTML
                     cleaned_html = str(soup)
@@ -587,13 +557,6 @@ def extract_sections_from_json(json_data):
                     
                     for heading in headings:
                         if not heading or not heading.name:  # Skip None or invalid headings
-                            continue
-                            
-                        # Skip headings that are part of navigation
-                        heading_classes = ' '.join(heading.get('class', [])).lower()
-                        if any(nav_class in heading_classes for nav_class in nav_classes):
-                            debug_log(f"\nSkipping navigation heading: {heading.get_text().strip()}")
-                            debug_log(f"Classes: {heading.get('class', [])}")
                             continue
                         
                         # Get heading text
@@ -632,15 +595,6 @@ def extract_sections_from_json(json_data):
                                              current.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] and 
                                              int(current.name[1]) <= int(heading.name[1])):
                             if hasattr(current, 'name'):
-                                # Skip elements that are part of navigation
-                                if current.get('class'):
-                                    current_classes = ' '.join(current.get('class', [])).lower()
-                                    if any(nav_class in current_classes for nav_class in nav_classes):
-                                        debug_log(f"\nSkipping navigation content: {current.get_text().strip()[:100]}")
-                                        debug_log(f"Classes: {current.get('class', [])}")
-                                        current = current.next_sibling
-                                        continue
-                                
                                 # Get text from any element
                                 text = current.get_text().strip()
                                 if text and len(text.split()) > 2:  # Skip very short text
@@ -676,12 +630,6 @@ def extract_sections_from_json(json_data):
                     content_elements = []
                     for element in body.descendants:
                         if element and element.name and element.name not in ['script', 'style', 'meta', 'link']:
-                            # Skip elements that are part of navigation
-                            if element.get('class'):
-                                element_classes = ' '.join(element.get('class', [])).lower()
-                                if any(nav_class in element_classes for nav_class in nav_classes):
-                                    continue
-                            
                             text = element.get_text().strip()
                             if text and len(text.split()) > 2:  # Skip very short text
                                 content_elements.append(text)
