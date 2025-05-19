@@ -1508,14 +1508,15 @@ def calculate_weighted_similarity(sections, keyword_embedding):
         return 0.0, [], {}
 
 # Create tabs
-tab1, tab2, tab3 = st.tabs([
-    "Webpage Analysis",
+tab1, tab2, tab3, tab4 = st.tabs([
+    "Page ↔ Keyword / Keyword Cluster",
     "Link Profile Analysis",
-    "URL Comparison"
+    "URL Comparison",
+    "Site Embedding"
 ])
 
 with tab1:
-    st.subheader("Analyze Webpage Content")
+    st.subheader("Analyze Page Content with Keyword/Cluster")
     st.markdown("""
     Enter a URL and either a single keyword or a keyword cluster to analyze the webpage's content.
     The app will:
@@ -2137,6 +2138,142 @@ with tab3:
                 """)
     else:
         st.warning("Please enter both a keyword and at least one URL to analyze.")
+
+with tab4:
+    st.subheader("Site Embedding Analysis")
+    st.markdown("""
+    Enter up to 10 URLs from the same site to analyze their content structure and relationships.
+    The app will:
+    1. Analyze each URL's content
+    2. Generate embeddings for all sections
+    3. Show content distribution and patterns
+    4. Provide detailed section analysis
+    """)
+    
+    # URLs input
+    urls_input = st.text_area(
+        "Enter URLs to analyze (one per line, max 10):",
+        height=150,
+        placeholder="https://example.com/page1\nhttps://example.com/page2\nhttps://example.com/page3",
+        key="tab4_urls_input"
+    )
+    
+    if urls_input:
+        # Process URLs
+        urls = [url.strip() for url in urls_input.split('\n') if url.strip()]
+        
+        if len(urls) > 10:
+            st.warning("Maximum 10 URLs allowed. Only the first 10 will be analyzed.")
+            urls = urls[:10]
+        
+        if not urls:
+            st.warning("Please enter at least one valid URL to analyze.")
+        else:
+            # Store results for each URL
+            url_results = []
+            
+            # Process each URL
+            with st.spinner(f"Analyzing {len(urls)} URLs..."):
+                for url in urls:
+                    try:
+                        # Scrape and analyze the URL
+                        sections = scrape_webpage(url)
+                        if not sections:
+                            st.warning(f"Could not scrape content from {url}")
+                            continue
+                        
+                        # Generate embeddings for all sections
+                        sections_with_embeddings = get_cached_embedding(sections, batch_size=5)
+                        
+                        if sections_with_embeddings is None:
+                            st.warning(f"""
+                            Could not generate embeddings for {url}. This could be due to:
+                            1. Vertex AI quota limits - Please try again later
+                            2. Invalid content - Please check if the webpage has valid text content
+                            """)
+                            continue
+                        
+                        # Store URL results with sections
+                        url_results.append({
+                            'url': url,
+                            'sections': sections_with_embeddings,
+                            'sections_count': len(sections_with_embeddings),
+                            'total_words': sum(len(section['text'].split()) for section in sections_with_embeddings),
+                            'avg_section_length': sum(len(section['text'].split()) for section in sections_with_embeddings) / len(sections_with_embeddings) if sections_with_embeddings else 0
+                        })
+                    except Exception as e:
+                        st.warning(f"Error processing {url}: {str(e)}")
+                        continue
+            
+            if url_results:
+                # Display overall results
+                st.subheader("Site Analysis Results")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric(
+                        label="Total Pages Analyzed",
+                        value=len(url_results),
+                        help="Number of successfully analyzed pages"
+                    )
+                with col2:
+                    total_sections = sum(r['sections_count'] for r in url_results)
+                    st.metric(
+                        label="Total Sections",
+                        value=total_sections,
+                        help="Total number of content sections across all pages"
+                    )
+                with col3:
+                    avg_sections = total_sections / len(url_results)
+                    st.metric(
+                        label="Average Sections per Page",
+                        value=f"{avg_sections:.1f}",
+                        help="Average number of sections per page"
+                    )
+                
+                # Display content distribution
+                st.subheader("Content Distribution")
+                df_distribution = pd.DataFrame([{
+                    'URL': r['url'],
+                    'Sections': r['sections_count'],
+                    'Total Words': r['total_words'],
+                    'Avg Section Length': round(r['avg_section_length'], 1)
+                } for r in url_results])
+                
+                st.dataframe(df_distribution, use_container_width=True)
+                
+                # Display detailed section analysis for each URL
+                st.subheader("Detailed Section Analysis")
+                for result in url_results:
+                    with st.expander(f"View sections for {result['url']}"):
+                        # Create a DataFrame for this URL's sections
+                        sections_df = pd.DataFrame([{
+                            'Heading': section.get('heading', 'No heading'),
+                            'Type': section.get('type', 'Unknown'),
+                            'Length': len(section['text'].split()),
+                            'Preview': section['text'][:200] + '...' if len(section['text']) > 200 else section['text']
+                        } for section in result['sections']])
+                        
+                        st.dataframe(sections_df, use_container_width=True)
+                
+                # Add download button for results
+                csv = df_distribution.to_csv(index=False)
+                st.download_button(
+                    label="Download Site Analysis as CSV",
+                    data=csv,
+                    file_name="site_embedding_analysis.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.error("""
+                No URLs were successfully analyzed. This could be due to:
+                1. Vertex AI quota limits - Please try again later or request a quota increase
+                2. Invalid content - Please check if the webpages have valid text content
+                3. Access issues - Some URLs may be blocking access
+                
+                You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
+                """)
+    else:
+        st.warning("Please enter at least one URL to analyze.")
 
 # Add footer
 st.markdown("---")
