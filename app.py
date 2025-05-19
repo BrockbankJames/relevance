@@ -624,31 +624,73 @@ with tab1:
     
     if keyword_input:
         with st.spinner("Generating embedding..."):
+            debug_log(f"Getting embedding for keyword: {keyword_input[:100]}")
             embeddings = get_cached_embedding(keyword_input)
+            debug_log(f"Received embeddings type: {type(embeddings)}")
+            if embeddings is not None:
+                debug_log(f"Embeddings content: {str(embeddings)[:200]}")
             
         if embeddings is not None:
-            # Handle both single embedding and list of embeddings
-            keyword_embedding = embeddings[0] if isinstance(embeddings, list) else embeddings
-            
-            # Display embedding information
-            st.subheader("Embedding Information")
-            st.write(f"Vector dimension: {keyword_embedding.shape[0]}")
-            st.write(f"Vector shape: {keyword_embedding.shape}")
-            st.write(f"Data type: {keyword_embedding.dtype}")
-            
-            # Display the embedding vector
-            st.subheader("Embedding Vector")
-            st.code(keyword_embedding.tolist())
-            
-            # Add download button for the embedding
-            st.download_button(
-                label="Download Embedding as CSV",
-                data=",".join(map(str, keyword_embedding)),
-                file_name="keyword_embedding.csv",
-                mime="text/csv"
-            )
+            try:
+                # Handle both single embedding and list of embeddings
+                if isinstance(embeddings, list):
+                    if not embeddings:
+                        st.error("Received empty list of embeddings")
+                        st.stop()
+                    keyword_embedding = embeddings[0]
+                    debug_log(f"Extracted first embedding from list, type: {type(keyword_embedding)}")
+                else:
+                    keyword_embedding = embeddings
+                    debug_log(f"Using single embedding, type: {type(keyword_embedding)}")
+                
+                if not isinstance(keyword_embedding, np.ndarray):
+                    st.error(f"Invalid embedding type: {type(keyword_embedding)}")
+                    debug_log(f"Embedding content: {str(keyword_embedding)[:200]}")
+                    st.stop()
+                
+                # Display embedding information
+                st.subheader("Embedding Information")
+                try:
+                    st.write(f"Vector dimension: {keyword_embedding.shape[0]}")
+                    st.write(f"Vector shape: {keyword_embedding.shape}")
+                    st.write(f"Data type: {keyword_embedding.dtype}")
+                except Exception as e:
+                    st.error(f"Error displaying embedding information: {str(e)}")
+                    debug_log(f"Embedding shape: {getattr(keyword_embedding, 'shape', 'No shape')}")
+                    debug_log(f"Embedding type: {type(keyword_embedding)}")
+                    debug_log(f"Embedding content: {str(keyword_embedding)[:200]}")
+                    st.stop()
+                
+                # Display the embedding vector
+                st.subheader("Embedding Vector")
+                try:
+                    st.code(keyword_embedding.tolist())
+                except Exception as e:
+                    st.error(f"Error displaying embedding vector: {str(e)}")
+                    debug_log(f"Embedding content: {str(keyword_embedding)[:200]}")
+                    st.stop()
+                
+                # Add download button for the embedding
+                try:
+                    st.download_button(
+                        label="Download Embedding as CSV",
+                        data=",".join(map(str, keyword_embedding)),
+                        file_name="keyword_embedding.csv",
+                        mime="text/csv"
+                    )
+                except Exception as e:
+                    st.error(f"Error creating download button: {str(e)}")
+                    debug_log(f"Embedding content: {str(keyword_embedding)[:200]}")
+                    st.stop()
+            except Exception as e:
+                st.error(f"Error processing embedding: {str(e)}")
+                debug_log(f"Full error details: {str(e)}")
+                debug_log(f"Embeddings type: {type(embeddings)}")
+                debug_log(f"Embeddings content: {str(embeddings)[:200]}")
+                st.stop()
         else:
             st.error("Failed to generate embedding. Please check the error messages above.")
+            debug_log("get_cached_embedding returned None")
 
 with tab2:
     st.subheader("Analyze Webpage Content")
