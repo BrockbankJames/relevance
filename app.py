@@ -9,6 +9,8 @@ import pandas as pd
 import google.auth
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
+import hashlib
+import time
 
 # Set page config
 st.set_page_config(
@@ -43,6 +45,27 @@ def debug_log(message):
     if DEBUG:
         st.write(f"Debug: {message}")
 
+# Cache for embeddings to reduce API calls
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def get_cached_embedding(text):
+    """Get embedding from cache or generate new one"""
+    # Create a hash of the text for caching
+    text_hash = hashlib.md5(text.encode()).hexdigest()
+    
+    # Check if we have a cached embedding
+    if 'embeddings_cache' not in st.session_state:
+        st.session_state.embeddings_cache = {}
+    
+    if text_hash in st.session_state.embeddings_cache:
+        debug_log("Using cached embedding")
+        return st.session_state.embeddings_cache[text_hash]
+    
+    # If not in cache, generate new embedding
+    embedding = get_embedding(text)
+    if embedding is not None:
+        st.session_state.embeddings_cache[text_hash] = embedding
+    return embedding
+
 def get_vertex_ai_token():
     """Get authentication token for Vertex AI API"""
     try:
@@ -64,13 +87,11 @@ def get_embedding(text):
     """Generate embedding using Vertex AI text-embedding-005 model via REST API"""
     if not text or not isinstance(text, str):
         st.error("Invalid input: text must be a non-empty string")
-        debug_log(f"Invalid input type: {type(text)}")
         return None
         
     text = text.strip()
     if not text:
         st.error("Invalid input: text cannot be empty or whitespace only")
-        debug_log("Empty or whitespace-only input")
         return None
         
     try:
@@ -106,35 +127,108 @@ def get_embedding(text):
         
         debug_log(f"Making request to: {endpoint}")
         
-        # Make the API request
-        response = requests.post(endpoint, headers=headers, json=data)
+        # Make the API request with retry logic for quota limits
+        max_retries = 3
+        retry_delay = 2  # seconds
         
-        if response.status_code != 200:
-            st.error(f"Error from Vertex AI API: {response.status_code}")
-            debug_log(f"API Response: {response.text}")
-            return None
-            
-        # Parse the response
-        result = response.json()
-        debug_log("Successfully received API response")
-        
-        if 'predictions' not in result or not result['predictions']:
-            st.error("No predictions in API response")
-            debug_log(f"API Response: {result}")
-            return None
-            
-        # Extract the embedding
-        embedding = np.array(result['predictions'][0]['embeddings']['values'])
-        debug_log(f"Successfully extracted embedding, shape: {embedding.shape}")
-        
-        return embedding
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(endpoint, headers=headers, json=data)
+                
+                if response.status_code == 429:  # Quota exceeded
+                    if attempt < max_retries - 1:
+                        debug_log(f"Quota exceeded, retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                        continue
+                    else:
+                        st.error("""
+                        Quota exceeded for Vertex AI. Please try again later or request a quota increase.
+                        You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
+                        """)
+                        return None
+                
+                if response.status_code != 200:
+                    st.error(f"Error from Vertex AI API: {response.status_code}")
+                    debug_log(f"API Response: {response.text}")
+                    return None
+                    
+                # Parse the response
+                result = response.json()
+                debug_log("Successfully received API response")
+                
+                if 'predictions' not in result or not result['predictions']:
+                    st.error("No predictions in API response")
+                    debug_log(f"API Response: {result}")
+                    return None
+                    
+                # Extract the embedding
+                embedding = np.array(result['predictions'][0]['embeddings']['values'])
+                debug_log(f"Successfully extracted embedding, shape: {embedding.shape}")
+                
+                return embedding
+                
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    debug_log(f"Request failed, retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    raise e
         
     except Exception as e:
         st.error(f"Error in get_embedding: {str(e)}")
         debug_log(f"Full error details: {str(e)}")
-        debug_log(f"Error type: {type(e)}")
-        debug_log(f"Error args: {e.args}")
         return None
+
+def extract_sections(html_content):
+    """Extract content sections from HTML, properly handling nested tags"""
+    soup = BeautifulSoup(html_content, 'html.parser')
+    sections = []
+    
+    # Find all heading tags
+    for heading in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+        section = {
+            'type': heading.name,
+            'text': '',
+            'content': []
+        }
+        
+        # Get the heading text
+        heading_text = heading.get_text().strip()
+        if heading_text:
+            section['text'] = heading_text
+        
+        # Get all content until the next heading of same or higher level
+        current = heading.next_sibling
+        while current and not (isinstance(current, BeautifulSoup.Tag) and 
+                             current.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] and 
+                             int(current.name[1]) <= int(heading.name[1])):
+            if isinstance(current, BeautifulSoup.Tag):
+                if current.name == 'p':
+                    text = current.get_text().strip()
+                    if text:
+                        section['content'].append(text)
+            current = current.next_sibling
+        
+        # Combine heading and content
+        if section['content']:
+            section['text'] = f"{section['text']} {' '.join(section['content'])}"
+        
+        if section['text']:  # Only add non-empty sections
+            sections.append(section)
+    
+    # If no sections found, try to get paragraphs
+    if not sections:
+        for p in soup.find_all('p'):
+            text = p.get_text().strip()
+            if text:
+                sections.append({
+                    'type': 'p',
+                    'text': text
+                })
+    
+    return sections
 
 def scrape_webpage(url):
     """Scrape webpage content using ScrapingBee API"""
@@ -166,10 +260,6 @@ def scrape_webpage(url):
             'block_resources': 'true'
         }
         
-        # Log the full API URL (without the API key)
-        debug_url = f"https://app.scrapingbee.com/api/v1/?url={encoded_url}&render_js=true&premium_proxy=true"
-        debug_log(f"API URL (without key): {debug_url}")
-        
         api_url = "https://app.scrapingbee.com/api/v1/"
         response = requests.get(api_url, params=params)
         
@@ -179,25 +269,12 @@ def scrape_webpage(url):
                 error_data = response.json()
                 if 'error' in error_data:
                     st.error(f"API Error: {error_data['error']}")
-                    if 'reason' in error_data:
-                        st.error(f"Reason: {error_data['reason']}")
             except:
                 debug_log(f"Raw API Response: {response.text}")
-                st.error("Failed to parse API error response")
             return None
         
-        # Parse the HTML content
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        # Extract sections (h tags and p tags)
-        sections = []
-        for tag in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p']):
-            text = tag.get_text().strip()
-            if text:  # Only include non-empty sections
-                sections.append({
-                    'type': tag.name,
-                    'text': text
-                })
+        # Extract sections using the new function
+        sections = extract_sections(response.content)
         
         if not sections:
             st.warning("No content sections found on the page. The page might be blocking access or have no text content.")
@@ -225,12 +302,12 @@ with tab1:
     
     if keyword_input:
         with st.spinner("Generating embedding..."):
-            keyword_embedding = get_embedding(keyword_input)
+            keyword_embedding = get_cached_embedding(keyword_input)
             
         if keyword_embedding is not None:
             # Display embedding information
             st.subheader("Embedding Information")
-            st.write(f"Vector dimension: {len(keyword_embedding)}")
+            st.write(f"Vector dimension: {keyword_embedding.shape[0]}")
             st.write(f"Vector shape: {keyword_embedding.shape}")
             st.write(f"Data type: {keyword_embedding.dtype}")
             
@@ -263,7 +340,7 @@ with tab2:
             with st.spinner("Generating embeddings for sections..."):
                 section_embeddings = []
                 for section in sections:
-                    embedding = get_embedding(section['text'])
+                    embedding = get_cached_embedding(section['text'])
                     if embedding is not None:
                         section_embeddings.append(embedding)
             
@@ -354,7 +431,7 @@ with tab3:
                             # Generate embeddings for all sections
                             section_embeddings_url = []
                             for section in sections:
-                                embedding = get_embedding(section['text'])
+                                embedding = get_cached_embedding(section['text'])
                                 if embedding is not None:
                                     section_embeddings_url.append(embedding)
                             
