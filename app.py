@@ -98,6 +98,13 @@ def get_embedding(text):
     """Generate embedding using Vertex AI text-embedding-005 model"""
     if not text or not isinstance(text, str):
         st.error("Invalid input: text must be a non-empty string")
+        debug_log(f"Invalid input type: {type(text)}")
+        return None
+        
+    text = text.strip()
+    if not text:
+        st.error("Invalid input: text cannot be empty or whitespace only")
+        debug_log("Empty or whitespace-only input")
         return None
         
     try:
@@ -117,6 +124,7 @@ def get_embedding(text):
             debug_log(f"Model initialization error details: {str(e)}")
             debug_log(f"Error type: {type(e)}")
             debug_log(f"Error args: {e.args}")
+            debug_log(f"Full error: {repr(e)}")
             return None
         
         # Get embeddings
@@ -129,24 +137,45 @@ def get_embedding(text):
             debug_log("Calling model.get_embeddings...")
             embeddings = model.get_embeddings(texts_to_embed)
             debug_log("get_embeddings call completed")
+            debug_log(f"Embeddings type: {type(embeddings)}")
             
-            if not embeddings or len(embeddings) == 0:
+            if not embeddings:
                 st.error("No embeddings were returned from the model")
+                debug_log("Empty embeddings response")
+                return None
+                
+            if not isinstance(embeddings, list):
+                st.error(f"Unexpected embeddings type: {type(embeddings)}")
+                debug_log(f"Expected list, got {type(embeddings)}")
+                return None
+                
+            if len(embeddings) == 0:
+                st.error("Empty embeddings list returned")
+                debug_log("Empty embeddings list")
                 return None
                 
             debug_log("Processing embeddings response...")
-            debug_log(f"Embeddings type: {type(embeddings)}")
             debug_log(f"Number of embeddings returned: {len(embeddings)}")
             
             # Extract the embedding from the response
             debug_log("Extracting embedding values...")
             if not hasattr(embeddings[0], 'values'):
                 st.error("Embedding response does not contain expected 'values' attribute")
+                debug_log(f"Embedding object attributes: {dir(embeddings[0])}")
                 return None
                 
-            embedding = np.array(embeddings[0].values)
+            try:
+                embedding = np.array(embeddings[0].values)
+                debug_log(f"Successfully created numpy array, shape: {embedding.shape}")
+            except Exception as e:
+                st.error(f"Error converting embedding to numpy array: {str(e)}")
+                debug_log(f"Error converting to numpy: {str(e)}")
+                debug_log(f"Values type: {type(embeddings[0].values)}")
+                return None
+                
             if embedding is None or embedding.size == 0:
                 st.error("Failed to convert embedding to numpy array")
+                debug_log("Empty or None numpy array")
                 return None
                 
             debug_log(f"Embedding shape: {embedding.shape}")
@@ -158,6 +187,7 @@ def get_embedding(text):
             debug_log(f"Embedding generation error details: {str(e)}")
             debug_log(f"Error type: {type(e)}")
             debug_log(f"Error args: {e.args}")
+            debug_log(f"Full error: {repr(e)}")
             return None
             
     except Exception as e:
@@ -165,6 +195,7 @@ def get_embedding(text):
         debug_log(f"Full error details: {str(e)}")
         debug_log(f"Error type: {type(e)}")
         debug_log(f"Error args: {e.args}")
+        debug_log(f"Full error: {repr(e)}")
         return None
 
 def scrape_webpage(url):
