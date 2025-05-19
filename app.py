@@ -1808,25 +1808,44 @@ with tab2:
                             
                             # Validate and normalize each embedding
                             valid_embeddings = []
-                            for emb in batch_embeddings:
-                                if isinstance(emb, np.ndarray) and emb.ndim == 1:
-                                    # Normalize the embedding
-                                    norm = np.linalg.norm(emb)
-                                    if norm > 0:
-                                        valid_embeddings.append(emb / norm)
-                                    else:
-                                        debug_log(f"Skipping embedding with zero norm")
+                            for i, emb in enumerate(batch_embeddings):
+                                debug_log(f"\nValidating embedding {i+1} from batch:")
+                                debug_log(f"Type: {type(emb)}")
+                                debug_log(f"Shape: {emb.shape if hasattr(emb, 'shape') else 'no shape'}")
+                                
+                                if not isinstance(emb, np.ndarray):
+                                    try:
+                                        emb = np.array(emb, dtype=np.float32)
+                                        debug_log("Converted to numpy array")
+                                    except Exception as e:
+                                        debug_log(f"Failed to convert to numpy array: {str(e)}")
+                                        continue
+                                
+                                if emb.ndim != 1:
+                                    debug_log(f"Invalid dimension: {emb.ndim}")
+                                    continue
+                                
+                                # Check for NaN or infinite values
+                                if np.any(np.isnan(emb)) or np.any(np.isinf(emb)):
+                                    debug_log("Embedding contains NaN or infinite values")
+                                    continue
+                                
+                                # Normalize the embedding
+                                norm = np.linalg.norm(emb)
+                                if norm > 0:
+                                    normalized_emb = emb / norm
+                                    debug_log(f"Successfully normalized embedding, norm: {norm:.4f}")
+                                    valid_embeddings.append(normalized_emb)
                                 else:
-                                    debug_log(f"Skipping invalid embedding shape: {emb.shape if hasattr(emb, 'shape') else 'no shape'}")
+                                    debug_log("Skipping embedding with zero norm")
                             
                             if valid_embeddings:
+                                debug_log(f"Added {len(valid_embeddings)} valid embeddings from batch")
                                 keyword_embeddings.extend(valid_embeddings)
                             else:
-                                st.error(f"No valid embeddings generated for keywords {i+1} to {min(i+batch_size, len(keywords))}")
+                                debug_log("No valid embeddings in this batch")
+                                st.error(f"Failed to generate valid embeddings for keywords {i+1} to {min(i+batch_size, len(keywords))}. Please try again.")
                                 st.stop()
-                            
-                            if i + batch_size < len(keywords):
-                                time.sleep(delay_between_batches)
                     
                     if not keyword_embeddings:
                         st.error("No valid embeddings were generated for any keywords")
