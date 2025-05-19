@@ -183,11 +183,29 @@ def get_embedding(text):
 
 def extract_sections(html_content):
     """Extract content sections from HTML, properly handling nested tags"""
+    debug_log("Starting HTML content extraction...")
+    debug_log(f"HTML content length: {len(html_content)} characters")
+    debug_log("First 500 characters of HTML:")
+    debug_log(html_content[:500])
+    
     soup = BeautifulSoup(html_content, 'html.parser')
     sections = []
     
+    # Debug the HTML structure
+    debug_log("\nChecking for headings...")
+    headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+    debug_log(f"Found {len(headings)} heading tags")
+    for h in headings:
+        debug_log(f"Found {h.name} tag with text: {h.get_text().strip()[:100]}")
+    
+    debug_log("\nChecking for paragraphs...")
+    paragraphs = soup.find_all('p')
+    debug_log(f"Found {len(paragraphs)} paragraph tags")
+    for p in paragraphs[:3]:  # Show first 3 paragraphs
+        debug_log(f"Paragraph text: {p.get_text().strip()[:100]}")
+    
     # Find all heading tags
-    for heading in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+    for heading in headings:
         section = {
             'type': heading.name,
             'text': '',
@@ -198,9 +216,11 @@ def extract_sections(html_content):
         heading_text = heading.get_text().strip()
         if heading_text:
             section['text'] = heading_text
+            debug_log(f"\nProcessing {heading.name} section: {heading_text[:100]}")
         
         # Get all content until the next heading of same or higher level
         current = heading.next_sibling
+        content_count = 0
         while current and not (hasattr(current, 'name') and 
                              current.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] and 
                              int(current.name[1]) <= int(heading.name[1])):
@@ -208,26 +228,33 @@ def extract_sections(html_content):
                 text = current.get_text().strip()
                 if text:
                     section['content'].append(text)
+                    content_count += 1
+                    if content_count <= 2:  # Log first 2 content items
+                        debug_log(f"  Added content: {text[:100]}")
             current = current.next_sibling
         
         # Combine heading and content
         if section['content']:
             section['text'] = f"{section['text']} {' '.join(section['content'])}"
+            debug_log(f"  Combined section text: {section['text'][:100]}")
         
         if section['text']:  # Only add non-empty sections
             sections.append(section)
+            debug_log(f"  Added section with {len(section['content'])} content items")
     
     # If no sections found, try to get paragraphs
     if not sections:
-        for p in soup.find_all('p'):
+        debug_log("\nNo sections found with headings, trying paragraphs only...")
+        for p in paragraphs:
             text = p.get_text().strip()
             if text:
                 sections.append({
                     'type': 'p',
                     'text': text
                 })
+                debug_log(f"Added paragraph: {text[:100]}")
     
-    debug_log(f"Extracted {len(sections)} sections from HTML")
+    debug_log(f"\nExtracted {len(sections)} total sections")
     for i, section in enumerate(sections):
         debug_log(f"Section {i+1} ({section['type']}): {section['text'][:100]}...")
     
@@ -249,7 +276,8 @@ def scrape_webpage(url):
         encoded_url = urllib.parse.quote(url, safe=':/?=&')
         
         # Log the request details (for debugging)
-        debug_log(f"Scraping URL: {url}")
+        debug_log(f"\nScraping URL: {url}")
+        debug_log(f"Encoded URL: {encoded_url}")
         
         # Make the request to ScrapingBee API with enhanced parameters
         params = {
@@ -274,7 +302,7 @@ def scrape_webpage(url):
             })
         }
         
-        debug_log("Making request to ScrapingBee API...")
+        debug_log("\nMaking request to ScrapingBee API...")
         api_url = "https://app.scrapingbee.com/api/v1/"
         response = requests.get(api_url, params=params)
         
@@ -290,7 +318,17 @@ def scrape_webpage(url):
                 debug_log(f"Raw ScrapingBee Response: {response.text}")
             return None
         
-        debug_log("Successfully received response from ScrapingBee")
+        debug_log("\nSuccessfully received response from ScrapingBee")
+        debug_log(f"Response status code: {response.status_code}")
+        debug_log(f"Response content type: {response.headers.get('content-type', 'unknown')}")
+        debug_log(f"Response length: {len(response.content)} bytes")
+        
+        # Check if we got HTML content
+        content_type = response.headers.get('content-type', '').lower()
+        if 'text/html' not in content_type:
+            debug_log(f"Warning: Unexpected content type: {content_type}")
+            debug_log("First 500 characters of response:")
+            debug_log(response.text[:500])
         
         # Extract sections using the new function
         sections = extract_sections(response.content)
@@ -304,14 +342,15 @@ def scrape_webpage(url):
             
             Try using a different URL or check if the page is accessible.
             """)
-            debug_log("Raw HTML content received:")
-            debug_log(response.text[:500] + "...")  # Log first 500 chars of HTML
+            debug_log("\nRaw HTML content received:")
+            debug_log(response.text[:1000] + "...")  # Log first 1000 chars of HTML
         
         return sections
     except Exception as e:
         st.error(f"Error scraping webpage: {str(e)}")
         debug_log(f"Scraping error details: {str(e)}")
         debug_log(f"Error type: {type(e)}")
+        debug_log(f"Full error: {repr(e)}")
         return None
 
 def calculate_similarity(embedding1, embedding2):
