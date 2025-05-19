@@ -847,65 +847,77 @@ def scrape_webpage(url):
                 # Target main content area, explicitly excluding header, footer, nav, etc.
                 'main_content': {
                     'selector': '''
-                        body > *:not(header):not(footer):not(nav):not(.header):not(.footer):not(.navigation):not(.nav):not(.menu):not(.sidebar):not(.widget):not(.advertisement):not(.banner):not(.promo):not(.cookie-notice):not(.popup):not(.modal):not(.overlay):not(.newsletter):not(.subscription):not(.social-share):not(.related-posts):not(.comments):not(.recommendations):not(.trending):not(.popular):not(.featured):not(.latest):not(.recent):not(.preview):not(.list-item):not(.card):not(.teaser):not(.summary):not(.excerpt):not(.snippet):not(.thumbnail):not(.image):not(.video):not(.gallery):not(.carousel):not(.slider):not(.tabs):not(.accordion):not(.dropdown):not(.tooltip):not(.notification):not(.alert):not(.message):not(.status):not(.progress):not(.loading):not(.spinner):not(.icon):not(.button):not(.link):not(.badge):not(.label):not(.tag):not(.category):not(.meta):not(.author):not(.date):not(.time):not(.location):not(.price):not(.rating):not(.review):not(.comment):not(.share):not(.like):not(.follow):not(.subscribe):not(.search):not(.filter):not(.sort):not(.pagination):not(.breadcrumb):not(.sitemap)
+                        article:not(header *):not(footer *):not(nav *),
+                        .article-content:not(header *):not(footer *):not(nav *),
+                        .article-body:not(header *):not(footer *):not(nav *),
+                        .post-content:not(header *):not(footer *):not(nav *),
+                        .entry-content:not(header *):not(footer *):not(nav *),
+                        main article:not(header *):not(footer *):not(nav *),
+                        [role="main"] article:not(header *):not(footer *):not(nav *),
+                        .main-content article:not(header *):not(footer *):not(nav *),
+                        #content article:not(header *):not(footer *):not(nav *),
+                        .article:not(header *):not(footer *):not(nav *),
+                        .content:not(header *):not(footer *):not(nav *),
+                        .post:not(header *):not(footer *):not(nav *),
+                        .entry:not(header *):not(footer *):not(nav *),
+                        main:not(header *):not(footer *):not(nav *),
+                        [role="main"]:not(header *):not(footer *):not(nav *),
+                        .main-content:not(header *):not(footer *):not(nav *),
+                        #content:not(header *):not(footer *):not(nav *)
                     ''',
                     'type': 'list',
                     'output': 'html'
                 },
-                # Extract headings from main content only, excluding header/footer
+                # Extract headings from main content only, explicitly excluding header/footer
                 'headings': {
                     'selector': '''
-                        body > *:not(header):not(footer):not(nav) h1,
-                        body > *:not(header):not(footer):not(nav) h2,
-                        body > *:not(header):not(footer):not(nav) h3,
-                        article h1,
-                        article h2,
-                        article h3,
-                        .article-content h1,
-                        .article-content h2,
-                        .article-content h3,
-                        .article-body h1,
-                        .article-body h2,
-                        .article-body h3,
-                        .post-content h1,
-                        .post-content h2,
-                        .post-content h3,
-                        .entry-content h1,
-                        .entry-content h2,
-                        .entry-content h3,
-                        main article h1,
-                        main article h2,
-                        main article h3,
-                        [role="main"] article h1,
-                        [role="main"] article h2,
-                        [role="main"] article h3,
-                        .main-content article h1,
-                        .main-content article h2,
-                        .main-content article h3,
-                        #content article h1,
-                        #content article h2,
-                        #content article h3,
-                        .article h1,
-                        .article h2,
-                        .article h3
+                        article:not(header *):not(footer *):not(nav *) h1,
+                        article:not(header *):not(footer *):not(nav *) h2,
+                        article:not(header *):not(footer *):not(nav *) h3,
+                        .article-content:not(header *):not(footer *):not(nav *) h1,
+                        .article-content:not(header *):not(footer *):not(nav *) h2,
+                        .article-content:not(header *):not(footer *):not(nav *) h3,
+                        .article-body:not(header *):not(footer *):not(nav *) h1,
+                        .article-body:not(header *):not(footer *):not(nav *) h2,
+                        .article-body:not(header *):not(footer *):not(nav *) h3,
+                        .post-content:not(header *):not(footer *):not(nav *) h1,
+                        .post-content:not(header *):not(footer *):not(nav *) h2,
+                        .post-content:not(header *):not(footer *):not(nav *) h3,
+                        .entry-content:not(header *):not(footer *):not(nav *) h1,
+                        .entry-content:not(header *):not(footer *):not(nav *) h2,
+                        .entry-content:not(header *):not(footer *):not(nav *) h3,
+                        main article:not(header *):not(footer *):not(nav *) h1,
+                        main article:not(header *):not(footer *):not(nav *) h2,
+                        main article:not(header *):not(footer *):not(nav *) h3,
+                        [role="main"] article:not(header *):not(footer *):not(nav *) h1,
+                        [role="main"] article:not(header *):not(footer *):not(nav *) h2,
+                        [role="main"] article:not(header *):not(footer *):not(nav *) h3,
+                        .main-content article:not(header *):not(footer *):not(nav *) h1,
+                        .main-content article:not(header *):not(footer *):not(nav *) h2,
+                        .main-content article:not(header *):not(footer *):not(nav *) h3,
+                        #content article:not(header *):not(footer *):not(nav *) h1,
+                        #content article:not(header *):not(footer *):not(nav *) h2,
+                        #content article:not(header *):not(footer *):not(nav *) h3,
+                        .article:not(header *):not(footer *):not(nav *) h1,
+                        .article:not(header *):not(footer *):not(nav *) h2,
+                        .article:not(header *):not(footer *):not(nav *) h3
                     ''',
                     'type': 'list',
                     'output': 'text'
                 },
-                # Extract paragraphs from main content only, excluding header/footer
+                # Extract paragraphs from main content only, explicitly excluding header/footer
                 'paragraphs': {
                     'selector': '''
-                        body > *:not(header):not(footer):not(nav) p,
-                        article p,
-                        .article-content p,
-                        .article-body p,
-                        .post-content p,
-                        .entry-content p,
-                        main article p,
-                        [role="main"] article p,
-                        .main-content article p,
-                        #content article p,
-                        .article p
+                        article:not(header *):not(footer *):not(nav *) p,
+                        .article-content:not(header *):not(footer *):not(nav *) p,
+                        .article-body:not(header *):not(footer *):not(nav *) p,
+                        .post-content:not(header *):not(footer *):not(nav *) p,
+                        .entry-content:not(header *):not(footer *):not(nav *) p,
+                        main article:not(header *):not(footer *):not(nav *) p,
+                        [role="main"] article:not(header *):not(footer *):not(nav *) p,
+                        .main-content article:not(header *):not(footer *):not(nav *) p,
+                        #content article:not(header *):not(footer *):not(nav *) p,
+                        .article:not(header *):not(footer *):not(nav *) p
                     ''',
                     'type': 'list',
                     'output': 'text'
@@ -941,6 +953,19 @@ def scrape_webpage(url):
             try:
                 data = json.loads(response.text)
                 debug_log(f"JSON keys found: {list(data.keys())}")
+                
+                # Debug the content we received
+                if 'main_content' in data:
+                    debug_log("\nMain content items received:")
+                    for i, content in enumerate(data['main_content']):
+                        if content:
+                            soup = BeautifulSoup(content, 'html.parser')
+                            debug_log(f"\nContent {i+1}:")
+                            debug_log(f"Contains header: {bool(soup.find('header'))}")
+                            debug_log(f"Contains footer: {bool(soup.find('footer'))}")
+                            debug_log(f"Contains nav: {bool(soup.find('nav'))}")
+                            debug_log(f"First 200 chars: {content[:200]}")
+                
                 sections = extract_sections_from_json(response.text)
             except json.JSONDecodeError as e:
                 debug_log(f"Error decoding JSON: {str(e)}")
@@ -964,11 +989,33 @@ def scrape_webpage(url):
             debug_log(response.text[:1000] + "...")
             return None
         
-        # Filter out very short sections
-        sections = [s for s in sections if len(s['text'].split()) > 3]
-        debug_log(f"\nAfter filtering short sections: {len(sections)} sections remaining")
+        # Filter out very short sections and sections that look like they're from header/footer
+        filtered_sections = []
+        for section in sections:
+            # Skip sections that are too short
+            if len(section['text'].split()) <= 3:
+                debug_log(f"Skipping short section: {section['text'][:100]}")
+                continue
+                
+            # Skip sections that look like they're from header/footer
+            if any(non_content in section['text'].lower() for non_content in 
+                  ['menu', 'navigation', 'header', 'footer', 'copyright', 'privacy policy', 'terms of use']):
+                debug_log(f"Skipping non-content section: {section['text'][:100]}")
+                continue
+                
+            # Skip sections that are part of navigation or previews
+            if section.get('parent_class') and any(cls in str(section['parent_class']).lower() 
+                                                 for cls in ['nav', 'menu', 'preview', 'list-item']):
+                debug_log(f"Skipping navigation/preview section: {section['text'][:100]}")
+                continue
+                
+            filtered_sections.append(section)
         
-        return sections
+        debug_log(f"\nAfter filtering: {len(filtered_sections)} sections remaining")
+        for i, section in enumerate(filtered_sections):
+            debug_log(f"Section {i+1}: {section['text'][:100]}")
+        
+        return filtered_sections
     except Exception as e:
         st.error(f"Error scraping webpage: {str(e)}")
         debug_log(f"Scraping error details: {str(e)}")
