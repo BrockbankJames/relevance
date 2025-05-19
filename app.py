@@ -917,19 +917,19 @@ def scrape_webpage(url):
                                 h1_text = h1.get_text().strip()
                                 debug_log(f"\n=== PROCESSING H1: {h1_text} ===")
                                 
-                                # Create H1 section (just the heading)
+                                # Create H1 section (just the heading, no content)
                                 h1_section = {
                                     'type': 'h1',
                                     'heading': h1_text,
-                                    'text': h1_text,
-                                    'content': [],
+                                    'text': h1_text,  # Just the H1 text, no additional content
+                                    'content': [],    # Empty content array
                                     'level': 1
                                 }
                                 sections.append(h1_section)
                                 processed_h1s.add(h1)
-                                debug_log(f"Created H1 section: {h1_text}")
+                                debug_log(f"Created H1-only section: {h1_text}")
                                 
-                                # Create content section for text between H1 and H2
+                                # Create separate content section for text between H1 and H2
                                 content_section = {
                                     'type': 'h1-content',
                                     'heading': f"Content after {h1_text}",
@@ -938,7 +938,7 @@ def scrape_webpage(url):
                                     'level': 1.5
                                 }
                                 
-                                # Get content until next H2
+                                # Get content until next H2, but skip the H1 text itself
                                 current = h1.next_sibling
                                 content_found = False
                                 debug_log("\nLooking for content between H1 and next H2:")
@@ -954,10 +954,10 @@ def scrape_webpage(url):
                                         debug_log("Found another H1, stopping content collection")
                                         break
                                     
-                                    # Process content
+                                    # Process content, but skip if it's the H1 text
                                     if hasattr(current, 'name'):
                                         text = current.get_text().strip()
-                                        if text:
+                                        if text and text != h1_text:  # Only add if it's not the H1 text
                                             debug_log(f"Found content: {text[:100]}")
                                             content_section['content'].append(text)
                                             content_found = True
@@ -978,8 +978,10 @@ def scrape_webpage(url):
                                 debug_log(f"\nSection {i}:")
                                 debug_log(f"Type: {section['type']}")
                                 debug_log(f"Heading: {section['heading']}")
+                                debug_log(f"Text: {section['text']}")  # Added explicit text logging
                                 debug_log(f"Content items: {len(section['content'])}")
-                                debug_log(f"Text preview: {section['text'][:200]}")
+                                if section['content']:
+                                    debug_log(f"Content preview: {section['content'][0][:200]}")
                             
                             # Second pass: Process remaining elements (H2 and below)
                             for element in soup.find_all(['div', 'section', 'article', 'p', 'h2', 'h3', 'h4', 'h5', 'h6']):
