@@ -62,7 +62,7 @@ def get_vertex_ai_token():
         debug_log(f"Token error details: {str(e)}")
         return None
 
-def get_embedding(texts, batch_size=5):
+def get_embedding(texts, batch_size=250):
     """Generate embeddings using Vertex AI text-embedding-005 model via REST API"""
     if isinstance(texts, str):
         texts = [texts]  # Convert single text to list
@@ -80,7 +80,6 @@ def get_embedding(texts, batch_size=5):
     try:
         debug_log("Starting batch embedding generation...")
         debug_log(f"Number of texts to process: {len(texts)}")
-        debug_log(f"Text lengths: {[len(text) for text in texts]}")
         
         # Get project and location from secrets
         project_id = st.secrets.get('GOOGLE_CLOUD_PROJECT')
@@ -105,18 +104,128 @@ def get_embedding(texts, batch_size=5):
         
         # Process texts in batches
         all_embeddings = []
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i:i + batch_size]
-            debug_log(f"\nProcessing batch {i//batch_size + 1} of {(len(texts) + batch_size - 1)//batch_size}")
-            debug_log(f"Batch size: {len(batch_texts)}")
+        current_batch = []
+        current_batch_tokens = 0
+        
+        # Rough estimate: 1 token ≈ 4 characters for English text
+        # This is a conservative estimate to stay well under the 20,000 token limit
+        TOKENS_PER_CHAR = 0.25
+        MAX_TOKENS_PER_TEXT = 8000  # Slightly under 8,192 to be safe
+        MAX_TOKENS_PER_BATCH = 19000  # Slightly under 20,000 to be safe
+        
+        for text in texts:
+            # Truncate text if it's too long
+            if len(text) * TOKENS_PER_CHAR > MAX_TOKENS_PER_TEXT:
+                debug_log(f"Truncating text from {len(text)} to {int(MAX_TOKENS_PER_TEXT / TOKENS_PER_CHAR)} characters")
+                text = text[:int(MAX_TOKENS_PER_TEXT / TOKENS_PER_CHAR)]
+            
+            text_tokens = len(text) * TOKENS_PER_CHAR
+            
+            # If adding this text would exceed batch limits, process current batch
+            if (current_batch_tokens + text_tokens > MAX_TOKENS_PER_BATCH or 
+                len(current_batch) >= batch_size):
+                if current_batch:
+                    debug_log(f"\nProcessing batch of {len(current_batch)} texts")
+                    debug_log(f"Batch token estimate: {current_batch_tokens:.0f}")
+                    
+                    data = {
+                        "instances": [{"content": text} for text in current_batch]
+                    }
+                    
+                    # Make the API request with retry logic for quota limits
+                    max_retries = 3
+                    retry_delay = 5  # Start with 5 second delay
+                    
+                    for attempt in range(max_retries):
+                        try:
+                            response = requests.post(endpoint, headers=headers, json=data)
+                            
+                            if response.status_code == 429:  # Quota exceeded
+                                if attempt < max_retries - 1:
+                                    debug_log(f"Quota exceeded, retrying in {retry_delay} seconds...")
+                                    time.sleep(retry_delay)
+                                    retry_delay *= 2  # Exponential backoff
+                                    continue
+                                else:
+                                    st.error("""
+                                    Quota exceeded for Vertex AI. Please try again later or request a quota increase.
+                                    You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
+                                    """)
+                                    return None
+                            
+                            if response.status_code != 200:
+                                st.error(f"Error from Vertex AI API: {response.status_code}")
+                                debug_log(f"API Response: {response.text}")
+                                return None
+                                
+                            # Parse the response
+                            result = response.json()
+                            debug_log("Successfully received API response")
+                            
+                            if 'predictions' not in result or not result['predictions']:
+                                st.error("No predictions in API response")
+                                debug_log(f"API Response: {result}")
+                                return None
+                            
+                            # Extract and validate embeddings
+                            batch_embeddings = []
+                            for pred in result['predictions']:
+                                if 'embeddings' not in pred or 'values' not in pred['embeddings']:
+                                    st.error("Invalid prediction format in API response")
+                                    debug_log(f"Prediction structure: {pred}")
+                                    return None
+                                    
+                                values = pred['embeddings']['values']
+                                if not isinstance(values, list):
+                                    st.error("Embedding values is not a list")
+                                    debug_log(f"Values type: {type(values)}")
+                                    return None
+                                    
+                                # Convert to numpy array and validate
+                                embedding = np.array(values, dtype=np.float32)
+                                if embedding.ndim != 1:
+                                    st.error(f"Invalid embedding dimension: {embedding.ndim}")
+                                    debug_log(f"Embedding shape: {embedding.shape}")
+                                    return None
+                                    
+                                batch_embeddings.append(embedding)
+                            
+                            all_embeddings.extend(batch_embeddings)
+                            debug_log(f"Successfully extracted {len(batch_embeddings)} embeddings")
+                            
+                            # Add a delay between batches to avoid rate limits
+                            time.sleep(2)  # 2 second delay between batches
+                            
+                            break  # Success, exit retry loop
+                            
+                        except Exception as e:
+                            if attempt < max_retries - 1:
+                                debug_log(f"Request failed, retrying in {retry_delay} seconds...")
+                                time.sleep(retry_delay)
+                                retry_delay *= 2
+                            else:
+                                raise e
+                    
+                    # Reset batch
+                    current_batch = []
+                    current_batch_tokens = 0
+            
+            # Add text to current batch
+            current_batch.append(text)
+            current_batch_tokens += text_tokens
+        
+        # Process any remaining texts
+        if current_batch:
+            debug_log(f"\nProcessing final batch of {len(current_batch)} texts")
+            debug_log(f"Batch token estimate: {current_batch_tokens:.0f}")
             
             data = {
-                "instances": [{"content": text} for text in batch_texts]
+                "instances": [{"content": text} for text in current_batch]
             }
             
-            # Make the API request with retry logic for quota limits
+            # Make the API request with retry logic
             max_retries = 3
-            retry_delay = 2
+            retry_delay = 5
             
             for attempt in range(max_retries):
                 try:
@@ -126,7 +235,7 @@ def get_embedding(texts, batch_size=5):
                         if attempt < max_retries - 1:
                             debug_log(f"Quota exceeded, retrying in {retry_delay} seconds...")
                             time.sleep(retry_delay)
-                            retry_delay *= 2  # Exponential backoff
+                            retry_delay *= 2
                             continue
                         else:
                             st.error("""
@@ -142,8 +251,6 @@ def get_embedding(texts, batch_size=5):
                         
                     # Parse the response
                     result = response.json()
-                    debug_log("Successfully received API response")
-                    debug_log(f"Response structure: {list(result.keys())}")
                     
                     if 'predictions' not in result or not result['predictions']:
                         st.error("No predictions in API response")
@@ -172,15 +279,9 @@ def get_embedding(texts, batch_size=5):
                             return None
                             
                         batch_embeddings.append(embedding)
-                        debug_log(f"Successfully processed embedding with shape: {embedding.shape}")
                     
                     all_embeddings.extend(batch_embeddings)
                     debug_log(f"Successfully extracted {len(batch_embeddings)} embeddings")
-                    
-                    # Add a small delay between batches to avoid rate limits
-                    if i + batch_size < len(texts):
-                        time.sleep(1)
-                    
                     break  # Success, exit retry loop
                     
                 except Exception as e:
@@ -204,14 +305,23 @@ def get_embedding(texts, batch_size=5):
         debug_log(f"Full error details: {str(e)}")
         return None
 
-@st.cache_data(ttl=3600)  # Cache for 1 hour
-def get_cached_embedding(texts, batch_size=5):
-    """Get embeddings from cache or generate new ones"""
+def get_cached_embedding(texts, batch_size=250):
+    """Get embeddings from cache or generate new ones, maintaining section structure"""
     if isinstance(texts, str):
         texts = [texts]  # Convert single text to list
     
-    # Create hashes for caching
-    text_hashes = [hashlib.md5(text.encode()).hexdigest() for text in texts]
+    # If texts is a list of sections (from webpage analysis)
+    is_section_list = all(isinstance(text, dict) and 'text' in text for text in texts)
+    
+    if is_section_list:
+        # Extract just the text content for embedding generation
+        section_texts = [section['text'] for section in texts]
+        # Create hashes for caching using the full section text
+        text_hashes = [hashlib.md5(section['text'].encode()).hexdigest() for section in texts]
+    else:
+        section_texts = texts
+        # Create hashes for caching
+        text_hashes = [hashlib.md5(text.encode()).hexdigest() for text in texts]
     
     # Check if we have cached embeddings
     if 'embeddings_cache' not in st.session_state:
@@ -222,7 +332,7 @@ def get_cached_embedding(texts, batch_size=5):
     indices_to_generate = []
     cached_embeddings = []
     
-    for i, (text, text_hash) in enumerate(zip(texts, text_hashes)):
+    for i, (text, text_hash) in enumerate(zip(section_texts, text_hashes)):
         if text_hash in st.session_state.embeddings_cache:
             cached_embedding = st.session_state.embeddings_cache[text_hash]
             # Ensure cached embedding is a numpy array
@@ -295,17 +405,23 @@ def get_cached_embedding(texts, batch_size=5):
     if not cached_embeddings:
         debug_log("No valid embeddings generated or cached")
         return None
-        
-    # Return single embedding for single text input, list for multiple texts
-    result = cached_embeddings[0] if len(texts) == 1 else cached_embeddings
-    debug_log(f"Returning embeddings of type: {type(result)}")
-    if isinstance(result, np.ndarray):
-        debug_log(f"Returning numpy array with shape: {result.shape}")
-    elif isinstance(result, list):
-        debug_log(f"Returning list of {len(result)} embeddings")
-        for i, emb in enumerate(result):
-            debug_log(f"Embedding {i+1} type: {type(emb)}, shape: {emb.shape if hasattr(emb, 'shape') else 'no shape'}")
-    return result
+    
+    # If input was a list of sections, return embeddings with section structure
+    if is_section_list:
+        for i, section in enumerate(texts):
+            section['embedding'] = cached_embeddings[i]
+        return texts
+    else:
+        # Return single embedding for single text input, list for multiple texts
+        result = cached_embeddings[0] if len(texts) == 1 else cached_embeddings
+        debug_log(f"Returning embeddings of type: {type(result)}")
+        if isinstance(result, np.ndarray):
+            debug_log(f"Returning numpy array with shape: {result.shape}")
+        elif isinstance(result, list):
+            debug_log(f"Returning list of {len(result)} embeddings")
+            for i, emb in enumerate(result):
+                debug_log(f"Embedding {i+1} type: {type(emb)}, shape: {emb.shape if hasattr(emb, 'shape') else 'no shape'}")
+        return result
 
 def extract_sections(html_content):
     """Extract content sections from HTML, properly handling nested tags"""
@@ -920,10 +1036,10 @@ with tab2:
             
             # Generate embeddings for all sections in batches
             with st.spinner("Generating embeddings for sections..."):
-                section_texts = [section['text'] for section in sections]
-                embeddings = get_cached_embedding(section_texts, batch_size=5)
+                # Pass the full section objects to get_cached_embedding
+                sections_with_embeddings = get_cached_embedding(sections, batch_size=250)
                 
-                if embeddings is None:
+                if sections_with_embeddings is None:
                     st.error("""
                     Failed to generate embeddings. This could be due to:
                     1. Vertex AI quota limits - Please try again later or request a quota increase
@@ -933,32 +1049,66 @@ with tab2:
                     """)
                     st.stop()
                 
-                section_embeddings = embeddings if isinstance(embeddings, list) else [embeddings]
+                # Extract embeddings from sections
+                section_embeddings = [section['embedding'] for section in sections_with_embeddings]
             
             # If we have a keyword embedding from tab1, calculate similarity
             if 'keyword_embedding' in locals() and keyword_embedding is not None:
                 st.subheader("Similarity Analysis")
                 
                 try:
-                    # Average all section embeddings
-                    avg_section_embedding = np.mean(section_embeddings, axis=0)
+                    # Calculate similarity for each section
+                    section_similarities = []
+                    for section in sections_with_embeddings:
+                        similarity = calculate_similarity(keyword_embedding, section['embedding'])
+                        section_similarities.append({
+                            'heading': section.get('heading', 'No heading'),
+                            'type': section['type'],
+                            'similarity': similarity,
+                            'text_preview': section['text'][:200] + '...' if len(section['text']) > 200 else section['text']
+                        })
                     
-                    # Calculate single cosine similarity between keyword and averaged section embeddings
-                    similarity = calculate_similarity(keyword_embedding, avg_section_embedding)
+                    # Sort sections by similarity
+                    section_similarities.sort(key=lambda x: x['similarity'], reverse=True)
                     
-                    # Display the similarity score
+                    # Display overall similarity
+                    avg_similarity = np.mean([s['similarity'] for s in section_similarities])
                     st.metric(
-                        label="Page Similarity Score",
-                        value=f"{similarity:.3f}",
-                        help="Cosine similarity between the keyword and the average of all webpage content embeddings (range: -1 to 1)"
+                        label="Average Page Similarity Score",
+                        value=f"{avg_similarity:.3f}",
+                        help="Average cosine similarity between the keyword and all webpage sections (range: -1 to 1)"
                     )
                     
-                    # Add explanation
-                    st.info("""
-                    This similarity score is calculated by:
-                    1. Averaging all section embeddings from the webpage
-                    2. Computing cosine similarity between the keyword embedding and the averaged webpage embedding
-                    """)
+                    # Display most similar sections
+                    st.subheader("Most Similar Sections")
+                    for i, section in enumerate(section_similarities[:3], 1):
+                        st.markdown(f"""
+                        **{i}. {section['heading']}** ({section['type']})  
+                        Similarity: {section['similarity']:.3f}  
+                        Preview: {section['text_preview']}
+                        """)
+                    
+                    # Display all sections in a table
+                    st.subheader("All Section Similarities")
+                    df = pd.DataFrame(section_similarities)
+                    df['similarity'] = df['similarity'].round(3)
+                    df = df.rename(columns={
+                        'heading': 'Section Heading',
+                        'type': 'Section Type',
+                        'similarity': 'Similarity Score',
+                        'text_preview': 'Content Preview'
+                    })
+                    st.dataframe(df, use_container_width=True)
+                    
+                    # Add download button for results
+                    csv = df.to_csv(index=False)
+                    st.download_button(
+                        label="Download Section Analysis as CSV",
+                        data=csv,
+                        file_name="section_analysis.csv",
+                        mime="text/csv"
+                    )
+                    
                 except Exception as e:
                     st.error(f"Error calculating similarity: {str(e)}")
                     debug_log(f"Error details: {str(e)}")
