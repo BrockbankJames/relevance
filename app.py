@@ -1204,114 +1204,106 @@ with tab2:
                     You can request a quota increase here: https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai
                     """)
                     st.stop()
-                
-                # Extract embeddings from sections
-                section_embeddings = [section['embedding'] for section in sections_with_embeddings if 'embedding' in section and isinstance(section['embedding'], np.ndarray)]
             
             # If we have a keyword embedding from tab1, calculate similarity
             if 'keyword_embedding' in locals() and isinstance(keyword_embedding, np.ndarray):
                 st.subheader("Similarity Analysis")
                 
                 try:
-                    # Calculate weighted similarity across all sections
-                    weighted_similarity, detailed_scores, metrics = calculate_weighted_similarity(
-                        sections_with_embeddings, 
-                        keyword_embedding
-                    )
+                    # Calculate individual section similarities
+                    section_results = []
+                    for section in sections_with_embeddings:
+                        if 'embedding' not in section or not isinstance(section['embedding'], np.ndarray):
+                            continue
+                            
+                        # Calculate similarity for this section only
+                        similarity = calculate_similarity(keyword_embedding, section['embedding'])
+                        text_length = len(section['text'].split())
+                        
+                        # Calculate weight based on content length
+                        length_weight = min(1.0, text_length / 100)  # Cap at 100 words
+                        
+                        section_results.append({
+                            'section': section,
+                            'raw_similarity': similarity,
+                            'weighted_similarity': similarity * length_weight,  # Weight by content length
+                            'text_length': text_length
+                        })
                     
-                    url_results = []
-                    
-                    # Process each URL
-                    with st.spinner(f"Analyzing {len(sections_with_embeddings)} sections..."):
-                        for section in sections_with_embeddings:
-                            if 'embedding' not in section or not isinstance(section['embedding'], np.ndarray):
-                                continue
-                                
-                            url_results.append({
-                                'section': section,
-                                'weighted_similarity': weighted_similarity,
-                                'raw_avg_similarity': metrics['raw_avg'],
-                                'raw_max_similarity': metrics['raw_max'],
-                                'raw_min_similarity': metrics['raw_min'],
-                                'similarity_std_dev': metrics['std_dev'],
-                                'text_length': len(section['text'].split())
-                            })
-                    
-                    if not url_results:
+                    if not section_results:
                         st.warning("No valid sections found for similarity analysis")
                         st.stop()
                     
-                    # Sort sections by similarity
-                    url_results.sort(key=lambda x: x['weighted_similarity'], reverse=True)
+                    # Sort sections by weighted similarity
+                    section_results.sort(key=lambda x: x['weighted_similarity'], reverse=True)
+                    
+                    # Calculate overall metrics
+                    raw_similarities = [r['raw_similarity'] for r in section_results]
+                    metrics = {
+                        'raw_avg': float(np.mean(raw_similarities)),
+                        'raw_max': float(max(raw_similarities)),
+                        'raw_min': float(min(raw_similarities)),
+                        'std_dev': float(np.std(raw_similarities)),
+                        'section_count': len(section_results)
+                    }
                     
                     # Display overall results
                     st.subheader("Comparison Results")
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         st.metric(
-                            label="Average Weighted Similarity",
-                            value=f"{float(np.mean([r['weighted_similarity'] for r in url_results])):.3f}",
-                            help="Weighted average similarity between the keyword and all analyzed sections"
+                            label="Average Similarity",
+                            value=f"{metrics['raw_avg']:.3f}",
+                            help="Average similarity between the keyword and all analyzed sections"
                         )
                     with col2:
                         st.metric(
                             label="Highest Similarity",
-                            value=f"{float(np.max([r['raw_max_similarity'] for r in url_results])):.3f}",
+                            value=f"{metrics['raw_max']:.3f}",
                             help="Highest similarity score found across all sections"
                         )
                     with col3:
                         st.metric(
-                            label="Average Std Dev",
-                            value=f"{float(np.mean([r['similarity_std_dev'] for r in url_results])):.3f}",
-                            help="Average standard deviation of similarity scores"
+                            label="Std Dev",
+                            value=f"{metrics['std_dev']:.3f}",
+                            help="Standard deviation of similarity scores"
                         )
                     
                     # Display top 3 most similar sections
                     st.subheader("Most Similar Sections")
-                    for i, result in enumerate(url_results[:3], 1):
+                    for i, result in enumerate(section_results[:3], 1):
                         st.markdown(f"""
                         **{i}. {result['section'].get('heading', 'No heading')}**  
+                        Raw Similarity: {result['raw_similarity']:.3f}  
                         Weighted Similarity: {result['weighted_similarity']:.3f}  
-                        Raw Average: {result['raw_avg_similarity']:.3f}  
-                        Raw Max: {result['raw_max_similarity']:.3f}  
-                        Raw Min: {result['raw_min_similarity']:.3f}  
-                        Std Dev: {result['similarity_std_dev']:.3f}  
                         Length: {result['text_length']} words
                         """)
                         
-                        # Show detailed scores for top sections
-                        if 'detailed_scores' in result and result['detailed_scores']:
-                            st.markdown("**Top 3 Most Similar Sections:**")
-                            for j, score in enumerate(result['detailed_scores'][:3], 1):
-                                st.markdown(f"""
-                                {j}. {score['heading']}  
-                                Similarity: {score['similarity']:.3f}  
-                                Weight: {score['weight']:.3f}  
-                                Length: {score['length']} words
-                                """)
+                        # Show section preview
+                        st.markdown(f"**Preview:** {result['section']['text'][:200]}...")
                     
                     # Display all sections in a table
                     st.subheader("All Section Similarities")
-                    df = pd.DataFrame(url_results)
+                    df = pd.DataFrame(section_results)
                     # Round numeric columns
-                    numeric_cols = ['weighted_similarity', 'raw_avg_similarity', 'raw_max_similarity', 
-                                  'raw_min_similarity', 'similarity_std_dev']
+                    numeric_cols = ['raw_similarity', 'weighted_similarity']
                     df[numeric_cols] = df[numeric_cols].round(3)
+                    
+                    # Add section heading and text preview
+                    df['heading'] = df['section'].apply(lambda x: x.get('heading', 'No heading'))
+                    df['text_preview'] = df['section'].apply(lambda x: x['text'][:200] + '...' if len(x['text']) > 200 else x['text'])
                     
                     # Rename columns
                     df = df.rename(columns={
-                        'section': 'Section',
+                        'heading': 'Section',
+                        'raw_similarity': 'Raw Similarity',
                         'weighted_similarity': 'Weighted Similarity',
-                        'raw_avg_similarity': 'Raw Average',
-                        'raw_max_similarity': 'Raw Maximum',
-                        'raw_min_similarity': 'Raw Minimum',
-                        'similarity_std_dev': 'Std Deviation',
-                        'text_length': 'Length'
+                        'text_length': 'Length',
+                        'text_preview': 'Preview'
                     })
                     
                     # Reorder columns
-                    df = df[['Section', 'Weighted Similarity', 'Raw Average', 'Raw Maximum', 
-                            'Raw Minimum', 'Std Deviation', 'Length']]
+                    df = df[['Section', 'Raw Similarity', 'Weighted Similarity', 'Length', 'Preview']]
                     
                     st.dataframe(df, use_container_width=True)
                     
