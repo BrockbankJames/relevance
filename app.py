@@ -1737,7 +1737,26 @@ with tab2:
     2. Compare it with your keyword/topic
     3. Show which URLs are most relevant
     4. Provide detailed section analysis
+    
+    Note: Processing is rate-limited to avoid API quotas. Please be patient as URLs are analyzed in small batches.
     """)
+    
+    # Add rate limiting settings
+    st.sidebar.markdown("### Rate Limiting Settings")
+    batch_size = st.sidebar.slider(
+        "URLs per batch",
+        min_value=1,
+        max_value=3,
+        value=2,
+        help="Number of URLs to process in each batch. Lower values help avoid quota issues."
+    )
+    delay_between_batches = st.sidebar.slider(
+        "Delay between batches (seconds)",
+        min_value=5,
+        max_value=30,
+        value=10,
+        help="Time to wait between processing batches of URLs."
+    )
     
     # Embedding source selection
     embedding_source = st.radio(
@@ -1777,11 +1796,18 @@ with tab2:
             keywords = [k.strip() for k in keywords_input.split('\n') if k.strip()]
             if keywords:
                 with st.spinner("Generating topic embeddings..."):
-                    # Generate embeddings for each keyword
-                    keyword_embeddings = get_cached_embedding(keywords)
-                    if keyword_embeddings is None:
-                        st.error("Failed to generate keyword embeddings. Please try again.")
-                        st.stop()
+                    # Process keywords in smaller batches
+                    keyword_embeddings = []
+                    for i in range(0, len(keywords), batch_size):
+                        batch = keywords[i:i + batch_size]
+                        with st.spinner(f"Processing keywords {i+1} to {min(i+batch_size, len(keywords))}..."):
+                            batch_embeddings = get_cached_embedding(batch)
+                            if batch_embeddings is None:
+                                st.error(f"Failed to generate embeddings for keywords {i+1} to {min(i+batch_size, len(keywords))}. Please try again.")
+                                st.stop()
+                            keyword_embeddings.extend(batch_embeddings)
+                            if i + batch_size < len(keywords):
+                                time.sleep(delay_between_batches)
                     
                     # Calculate average embedding for the topic
                     cluster_embedding = np.mean(keyword_embeddings, axis=0)
@@ -1807,10 +1833,16 @@ with tab2:
         else:
             # Store results for each URL
             url_results = []
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             
-            # Process each URL
-            with st.spinner(f"Analyzing {len(urls)} URLs..."):
-                for url in urls:
+            # Process URLs in batches
+            for i in range(0, len(urls), batch_size):
+                batch_urls = urls[i:i + batch_size]
+                status_text.text(f"Processing batch {i//batch_size + 1} of {(len(urls) + batch_size - 1)//batch_size}...")
+                
+                # Process each URL in the current batch
+                for url in batch_urls:
                     try:
                         # Scrape and analyze the URL
                         sections = scrape_webpage(url)
@@ -1818,15 +1850,21 @@ with tab2:
                             st.warning(f"Could not scrape content from {url}")
                             continue
                         
-                        # Generate embeddings for all sections
-                        sections_with_embeddings = get_cached_embedding(sections, batch_size=5)
+                        # Generate embeddings for all sections in smaller batches
+                        sections_with_embeddings = []
+                        for j in range(0, len(sections), 3):  # Process sections in batches of 3
+                            batch_sections = sections[j:j + 3]
+                            with st.spinner(f"Generating embeddings for sections {j+1} to {min(j+3, len(sections))} of {url}..."):
+                                batch_embeddings = get_cached_embedding(batch_sections, batch_size=3)
+                                if batch_embeddings is None:
+                                    st.warning(f"Could not generate embeddings for some sections of {url}")
+                                    continue
+                                sections_with_embeddings.extend(batch_embeddings)
+                                if j + 3 < len(sections):
+                                    time.sleep(2)  # Small delay between section batches
                         
-                        if sections_with_embeddings is None:
-                            st.warning(f"""
-                            Could not generate embeddings for {url}. This could be due to:
-                            1. Vertex AI quota limits - Please try again later
-                            2. Invalid content - Please check if the webpage has valid text content
-                            """)
+                        if not sections_with_embeddings:
+                            st.warning(f"No valid embeddings generated for {url}")
                             continue
                         
                         # Calculate weighted similarity across all sections
@@ -1847,10 +1885,25 @@ with tab2:
                             'most_similar_text': detailed_scores[0]['text_preview'] if detailed_scores else '',
                             'detailed_scores': detailed_scores
                         })
+                        
                     except Exception as e:
                         st.warning(f"Error processing {url}: {str(e)}")
                         continue
+                
+                # Update progress
+                progress = min((i + batch_size) / len(urls), 1.0)
+                progress_bar.progress(progress)
+                
+                # Add delay between batches if not the last batch
+                if i + batch_size < len(urls):
+                    status_text.text(f"Waiting {delay_between_batches} seconds before next batch...")
+                    time.sleep(delay_between_batches)
             
+            # Clear progress indicators
+            progress_bar.empty()
+            status_text.empty()
+            
+            # Rest of the display code remains the same...
             if url_results:
                 # Sort URLs by similarity
                 url_results.sort(key=lambda x: x['weighted_similarity'], reverse=True)
