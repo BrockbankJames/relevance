@@ -506,7 +506,7 @@ def extract_sections(html_content):
     
     return sections
 
-def extract_sections_from_json(json_data, header_footer_content=None):
+def extract_sections_from_json(json_data):
     """Extract sections from ScrapingBee JSON response, maintaining proper heading hierarchy"""
     debug_log("Processing JSON response...")
     sections = []
@@ -528,11 +528,6 @@ def extract_sections_from_json(json_data, header_footer_content=None):
                 
                 try:
                     soup = BeautifulSoup(content_html, 'html.parser')
-                    
-                    # Simply remove header and footer elements
-                    for tag in soup.find_all(['header', 'footer']):
-                        debug_log(f"Removing {tag.name} element and its contents")
-                        tag.decompose()
                     
                     # Find all heading tags
                     headings = soup.find_all(['h1', 'h2', 'h3'])
@@ -627,10 +622,6 @@ def extract_sections_from_json(json_data, header_footer_content=None):
                 # Create a temporary soup from all main content
                 temp_soup = BeautifulSoup(''.join(data['main_content']), 'html.parser')
                 
-                # Remove header/footer elements
-                for tag in temp_soup.find_all(['header', 'footer']):
-                    tag.decompose()
-                
                 # Get all text content from the body
                 body = temp_soup.find('body')
                 if body:
@@ -700,23 +691,10 @@ def scrape_webpage(url):
             'wait_for': 'body',  # Wait for body element
             'block_resources': 'false',  # Don't block resources to avoid 500 errors
             'extract_rules': json.dumps({
-                # Get all content first, we'll filter it later
                 'main_content': {
                     'selector': 'body',
                     'type': 'list',
                     'output': 'html'
-                },
-                # Get all headings
-                'headings': {
-                    'selector': 'h1, h2, h3',
-                    'type': 'list',
-                    'output': 'text'
-                },
-                # Get all paragraphs
-                'paragraphs': {
-                    'selector': 'p',
-                    'type': 'list',
-                    'output': 'text'
                 }
             })
         }
@@ -750,7 +728,7 @@ def scrape_webpage(url):
                 data = json.loads(response.text)
                 debug_log(f"JSON keys found: {list(data.keys())}")
                 
-                # Process the HTML content to remove header/footer before extracting sections
+                # Process the HTML content
                 if 'main_content' in data and data['main_content']:
                     debug_log("\nProcessing main content HTML...")
                     processed_content = []
@@ -759,128 +737,22 @@ def scrape_webpage(url):
                         if not content_html:
                             continue
                             
-                        debug_log(f"\nProcessing content block {i+1}:")
+                        debug_log(f"\nProcessing content_html {i+1}:")
                         debug_log(f"Content length: {len(content_html)} characters")
                         
                         try:
                             soup = BeautifulSoup(content_html, 'html.parser')
                             
-                            # Only remove header and footer elements and their contents
+                            # Remove header and footer elements
                             for tag in soup.find_all(['header', 'footer']):
                                 debug_log(f"Removing {tag.name} element and its contents")
                                 tag.decompose()
                             
-                            # Find all heading tags to establish hierarchy
-                            headings = soup.find_all(['h1', 'h2', 'h3'])
-                            debug_log(f"\nFound {len(headings)} heading tags")
-                            
-                            # Process each heading and its content
-                            current_section = None
-                            current_h3_content = []
-                            
-                            for i, heading in enumerate(headings):
-                                # Skip if the heading is inside a header or footer element
-                                is_in_non_content = False
-                                for parent in heading.parents:
-                                    if parent.name in ['header', 'footer']:
-                                        is_in_non_content = True
-                                        debug_log(f"Skipping heading in {parent.name} element: {heading.get_text().strip()[:100]}")
-                                        break
-                                
-                                if is_in_non_content:
-                                    continue
-                                
-                                # Get heading text
-                                heading_text = heading.get_text().strip()
-                                if not heading_text:
-                                    continue
-                                
-                                # If this is an h1 or h2, start a new main section
-                                if heading.name in ['h1', 'h2']:
-                                    # Save previous section if it exists
-                                    if current_section:
-                                        # Add any accumulated H3 content to the section
-                                        if current_h3_content:
-                                            current_section['content'].extend(current_h3_content)
-                                            debug_log(f"Added {len(current_h3_content)} H3 content items to section")
-                                        
-                                        # Combine all content for the section
-                                        if current_section['content']:
-                                            current_section['text'] = f"{current_section['heading']} {' '.join(current_section['content'])}"
-                                        if len(current_section['text'].split()) > 3:  # Only add meaningful sections
-                                            sections.append(current_section)
-                                            debug_log(f"Completed section: {current_section['heading'][:100]}")
-                                            debug_log(f"Section text length: {len(current_section['text'])} characters")
-                                    
-                                    # Start new main section
-                                    current_section = {
-                                        'type': heading.name,
-                                        'heading': heading_text,
-                                        'text': heading_text,  # Initialize with heading text
-                                        'content': [],
-                                        'subsections': []
-                                    }
-                                    current_h3_section = None
-                                    debug_log(f"\nStarting new {heading.name} section: {heading_text[:100]}")
-                                
-                                # If this is an h3, start a new subsection
-                                elif heading.name == 'h3' and current_section:
-                                    # Save previous h3 section if it exists
-                                    if current_h3_section:
-                                        current_h3_section['text'] = f"{current_h3_section['heading']} {' '.join(current_h3_section['content'])}"
-                                        current_section['subsections'].append(current_h3_section)
-                                    
-                                    # Start new h3 subsection
-                                    current_h3_section = {
-                                        'type': 'h3',
-                                        'heading': heading_text,
-                                        'text': heading_text,
-                                        'content': []
-                                    }
-                                    debug_log(f"  Starting new H3 subsection: {heading_text[:100]}")
-                                
-                                # Get all content until next heading
-                                current = heading.next_sibling
-                                while current and not (hasattr(current, 'name') and current.name in ['h1', 'h2', 'h3']):
-                                    if hasattr(current, 'name'):
-                                        # Get text from any element, not just paragraphs
-                                        text = current.get_text().strip()
-                                        if text and len(text.split()) > 2:  # Skip very short text
-                                            # Skip if text is from header/footer
-                                            if text in header_footer_content:
-                                                debug_log(f"Skipping content from header/footer: {text[:100]}")
-                                                current = current.next_sibling
-                                                continue
-                                            
-                                            # Get the element's class for debugging
-                                            element_class = current.get('class', [])
-                                            debug_log(f"Processing content from {current.name} element (class: {element_class}): {text[:100]}")
-                                            
-                                            if current_h3_section:
-                                                current_h3_section['content'].append(text)
-                                                debug_log(f"  Added content to H3 section: {text[:100]}")
-                                            elif current_section:
-                                                current_section['content'].append(text)
-                                                debug_log(f"Added content to main section: {text[:100]}")
-                                    current = current.next_sibling
-                            
-                            # Save final sections
-                            if current_section:
-                                # Save final h3 section if it exists
-                                if current_h3_section:
-                                    current_h3_section['text'] = f"{current_h3_section['heading']} {' '.join(current_h3_section['content'])}"
-                                    current_section['subsections'].append(current_h3_section)
-                                
-                                # Combine all content for the section
-                                if current_section['content']:
-                                    current_section['text'] = f"{current_section['heading']} {' '.join(current_section['content'])}"
-                                
-                                if len(current_section['text'].split()) > 3:  # Only add meaningful sections
-                                    sections.append(current_section)
-                                    debug_log(f"Completed final section: {current_section['heading'][:100]}")
-                                    debug_log(f"Section text length: {len(current_section['text'])} characters")
-                                    if current_section['subsections']:
-                                        debug_log(f"Contains {len(current_section['subsections'])} subsections")
+                            # Get the cleaned HTML
+                            cleaned_html = str(soup)
+                            if cleaned_html.strip():
+                                processed_content.append(cleaned_html)
+                                debug_log(f"Added processed content block {i+1}, length: {len(cleaned_html)}")
                             
                         except Exception as e:
                             debug_log(f"Error processing content block {i+1}: {str(e)}")
@@ -889,9 +761,13 @@ def scrape_webpage(url):
                     # Update the data with processed content
                     data['main_content'] = processed_content
                     debug_log(f"\nProcessed {len(processed_content)} content blocks")
-                
-                # Now extract sections from the cleaned content
-                sections = extract_sections_from_json(json.dumps(data))
+                    
+                    # Now extract sections from the cleaned content
+                    sections = extract_sections_from_json(json.dumps(data))
+                    
+                else:
+                    debug_log("No main_content found in JSON response")
+                    return None
                 
             except json.JSONDecodeError as e:
                 debug_log(f"Error decoding JSON: {str(e)}")
@@ -916,11 +792,10 @@ def scrape_webpage(url):
             return None
         
         return sections
+        
     except Exception as e:
         st.error(f"Error scraping webpage: {str(e)}")
         debug_log(f"Scraping error details: {str(e)}")
-        debug_log(f"Error type: {type(e)}")
-        debug_log(f"Full error: {repr(e)}")
         return None
 
 def calculate_similarity(embedding1, embedding2):
