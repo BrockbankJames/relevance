@@ -143,14 +143,37 @@ def get_embedding(texts, batch_size=5):
                     # Parse the response
                     result = response.json()
                     debug_log("Successfully received API response")
+                    debug_log(f"Response structure: {list(result.keys())}")
                     
                     if 'predictions' not in result or not result['predictions']:
                         st.error("No predictions in API response")
                         debug_log(f"API Response: {result}")
                         return None
-                        
-                    # Extract the embeddings
-                    batch_embeddings = [np.array(pred['embeddings']['values']) for pred in result['predictions']]
+                    
+                    # Extract and validate embeddings
+                    batch_embeddings = []
+                    for pred in result['predictions']:
+                        if 'embeddings' not in pred or 'values' not in pred['embeddings']:
+                            st.error("Invalid prediction format in API response")
+                            debug_log(f"Prediction structure: {pred}")
+                            return None
+                            
+                        values = pred['embeddings']['values']
+                        if not isinstance(values, list):
+                            st.error("Embedding values is not a list")
+                            debug_log(f"Values type: {type(values)}")
+                            return None
+                            
+                        # Convert to numpy array and validate
+                        embedding = np.array(values, dtype=np.float32)
+                        if embedding.ndim != 1:
+                            st.error(f"Invalid embedding dimension: {embedding.ndim}")
+                            debug_log(f"Embedding shape: {embedding.shape}")
+                            return None
+                            
+                        batch_embeddings.append(embedding)
+                        debug_log(f"Successfully processed embedding with shape: {embedding.shape}")
+                    
                     all_embeddings.extend(batch_embeddings)
                     debug_log(f"Successfully extracted {len(batch_embeddings)} embeddings")
                     
@@ -173,6 +196,7 @@ def get_embedding(texts, batch_size=5):
             return None
             
         debug_log(f"Successfully generated all {len(all_embeddings)} embeddings")
+        # Return single embedding for single text input, list for multiple texts
         return all_embeddings[0] if len(texts) == 1 else all_embeddings
         
     except Exception as e:
