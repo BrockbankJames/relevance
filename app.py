@@ -1508,9 +1508,10 @@ def calculate_weighted_similarity(sections, keyword_embedding):
         return 0.0, [], {}
 
 # Create tabs
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Page ↔ Keyword / Topic",
     "Link Profile ↔ Keyword / Topic",
+    "Links ↔ Site",
     "URL Comparison",
     "Site Embedding"
 ])
@@ -1951,6 +1952,244 @@ with tab2:
         st.warning("Please enter at least one URL to analyze.")
 
 with tab3:
+    st.subheader("Analyze Links Against Site Profile")
+    st.markdown("""
+    Compare a list of links against a site's overall content profile.
+    The app will:
+    1. Analyze the site's pages to create a site profile
+    2. Analyze each link's content
+    3. Compare each link against the site profile
+    4. Show which links are most similar to the site
+    """)
+    
+    # Site pages input
+    site_pages_input = st.text_area(
+        "Enter site pages to analyze (one per line, max 10):",
+        height=150,
+        placeholder="https://example.com/page1\nhttps://example.com/page2\nhttps://example.com/page3",
+        key="tab3_site_pages_input"
+    )
+    
+    # Links to analyze input
+    links_input = st.text_area(
+        "Enter links to analyze (one per line, max 20):",
+        height=150,
+        placeholder="https://othersite.com/page1\nhttps://othersite.com/page2",
+        key="tab3_links_input"
+    )
+    
+    if site_pages_input and links_input:
+        # Process site pages
+        site_pages = [url.strip() for url in site_pages_input.split('\n') if url.strip()]
+        links = [url.strip() for url in links_input.split('\n') if url.strip()]
+        
+        if len(site_pages) > 10:
+            st.warning("Maximum 10 site pages allowed. Only the first 10 will be analyzed.")
+            site_pages = site_pages[:10]
+        
+        if len(links) > 20:
+            st.warning("Maximum 20 links allowed. Only the first 20 will be analyzed.")
+            links = links[:20]
+        
+        if not site_pages or not links:
+            st.warning("Please enter both site pages and links to analyze.")
+        else:
+            # Store results for site pages
+            site_page_results = []
+            
+            # Process each site page
+            with st.spinner(f"Analyzing {len(site_pages)} site pages..."):
+                for url in site_pages:
+                    try:
+                        # Scrape and analyze the URL
+                        sections = scrape_webpage(url)
+                        if not sections:
+                            st.warning(f"Could not scrape content from {url}")
+                            continue
+                        
+                        # Generate embeddings for all sections
+                        sections_with_embeddings = get_cached_embedding(sections, batch_size=5)
+                        
+                        if sections_with_embeddings is None:
+                            st.warning(f"""
+                            Could not generate embeddings for {url}. This could be due to:
+                            1. Vertex AI quota limits - Please try again later
+                            2. Invalid content - Please check if the webpage has valid text content
+                            """)
+                            continue
+                        
+                        # Calculate average embedding for this page
+                        page_embeddings = [section['embedding'] for section in sections_with_embeddings if 'embedding' in section]
+                        if page_embeddings:
+                            page_avg_embedding = np.mean(page_embeddings, axis=0)
+                            site_page_results.append({
+                                'url': url,
+                                'embedding': page_avg_embedding,
+                                'sections_count': len(sections_with_embeddings),
+                                'total_words': sum(len(section['text'].split()) for section in sections_with_embeddings)
+                            })
+                    except Exception as e:
+                        st.warning(f"Error processing site page {url}: {str(e)}")
+                        continue
+            
+            if site_page_results:
+                # Calculate site profile embedding (average of all page embeddings)
+                site_embeddings = [result['embedding'] for result in site_page_results]
+                site_profile_embedding = np.mean(site_embeddings, axis=0)
+                
+                # Store results for links
+                link_results = []
+                
+                # Process each link
+                with st.spinner(f"Analyzing {len(links)} links..."):
+                    for url in links:
+                        try:
+                            # Scrape and analyze the URL
+                            sections = scrape_webpage(url)
+                            if not sections:
+                                st.warning(f"Could not scrape content from {url}")
+                                continue
+                            
+                            # Generate embeddings for all sections
+                            sections_with_embeddings = get_cached_embedding(sections, batch_size=5)
+                            
+                            if sections_with_embeddings is None:
+                                st.warning(f"""
+                                Could not generate embeddings for {url}. This could be due to:
+                                1. Vertex AI quota limits - Please try again later
+                                2. Invalid content - Please check if the webpage has valid text content
+                                """)
+                                continue
+                            
+                            # Calculate average embedding for this link
+                            link_embeddings = [section['embedding'] for section in sections_with_embeddings if 'embedding' in section]
+                            if link_embeddings:
+                                link_avg_embedding = np.mean(link_embeddings, axis=0)
+                                
+                                # Calculate similarity to site profile
+                                similarity = calculate_similarity(site_profile_embedding, link_avg_embedding)
+                                
+                                link_results.append({
+                                    'url': url,
+                                    'similarity': similarity,
+                                    'sections_count': len(sections_with_embeddings),
+                                    'total_words': sum(len(section['text'].split()) for section in sections_with_embeddings),
+                                    'most_similar_section': sections_with_embeddings[0].get('heading', 'No heading') if sections_with_embeddings else 'No heading',
+                                    'most_similar_text': sections_with_embeddings[0]['text'][:200] + '...' if sections_with_embeddings and len(sections_with_embeddings[0]['text']) > 200 else sections_with_embeddings[0]['text'] if sections_with_embeddings else ''
+                                })
+                        except Exception as e:
+                            st.warning(f"Error processing link {url}: {str(e)}")
+                            continue
+                
+                if link_results:
+                    # Sort links by similarity
+                    link_results.sort(key=lambda x: x['similarity'], reverse=True)
+                    
+                    # Display overall results
+                    st.subheader("Site Profile Analysis")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric(
+                            label="Total Site Pages Analyzed",
+                            value=len(site_page_results),
+                            help="Number of successfully analyzed site pages"
+                        )
+                    with col2:
+                        total_site_words = sum(r['total_words'] for r in site_page_results)
+                        st.metric(
+                            label="Total Site Content",
+                            value=f"{total_site_words:,} words",
+                            help="Total word count across all site pages"
+                        )
+                    with col3:
+                        avg_site_sections = sum(r['sections_count'] for r in site_page_results) / len(site_page_results)
+                        st.metric(
+                            label="Average Sections per Page",
+                            value=f"{avg_site_sections:.1f}",
+                            help="Average number of sections per site page"
+                        )
+                    
+                    # Display link analysis results
+                    st.subheader("Link Similarity Analysis")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric(
+                            label="Average Similarity",
+                            value=f"{np.mean([r['similarity'] for r in link_results]):.3f}",
+                            help="Average similarity between links and site profile"
+                        )
+                    with col2:
+                        st.metric(
+                            label="Highest Similarity",
+                            value=f"{max([r['similarity'] for r in link_results]):.3f}",
+                            help="Highest similarity score found"
+                        )
+                    with col3:
+                        st.metric(
+                            label="Lowest Similarity",
+                            value=f"{min([r['similarity'] for r in link_results]):.3f}",
+                            help="Lowest similarity score found"
+                        )
+                    
+                    # Display top 3 most similar links
+                    st.subheader("Most Similar Links")
+                    for i, result in enumerate(link_results[:3], 1):
+                        st.markdown(f"""
+                        **{i}. {result['url']}**  
+                        Similarity: {result['similarity']:.3f}  
+                        Sections: {result['sections_count']}  
+                        Words: {result['total_words']:,}  
+                        Most similar section: {result['most_similar_section']}  
+                        Preview: {result['most_similar_text']}
+                        """)
+                    
+                    # Display all links in a table
+                    st.subheader("All Link Similarities")
+                    df = pd.DataFrame(link_results)
+                    # Round numeric columns
+                    df['similarity'] = df['similarity'].round(3)
+                    
+                    # Rename columns
+                    df = df.rename(columns={
+                        'url': 'URL',
+                        'similarity': 'Similarity',
+                        'sections_count': 'Sections',
+                        'total_words': 'Words',
+                        'most_similar_section': 'Most Similar Section',
+                        'most_similar_text': 'Preview'
+                    })
+                    
+                    # Reorder columns
+                    df = df[['URL', 'Similarity', 'Sections', 'Words', 'Most Similar Section', 'Preview']]
+                    
+                    st.dataframe(df, use_container_width=True)
+                    
+                    # Add download button for results
+                    csv = df.to_csv(index=False)
+                    st.download_button(
+                        label="Download Link Analysis as CSV",
+                        data=csv,
+                        file_name="link_site_analysis.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.error("""
+                    No links were successfully analyzed. This could be due to:
+                    1. Vertex AI quota limits - Please try again later
+                    2. Invalid content - Please check if the links have valid text content
+                    3. Access issues - Some URLs may be blocking access
+                    """)
+            else:
+                st.error("""
+                No site pages were successfully analyzed. This could be due to:
+                1. Vertex AI quota limits - Please try again later
+                2. Invalid content - Please check if the site pages have valid text content
+                3. Access issues - Some URLs may be blocking access
+                """)
+    else:
+        st.warning("Please enter both site pages and links to analyze.")
+
+with tab4:
     st.subheader("Compare Multiple URLs")
     st.markdown("""
     Enter a keyword and up to 10 URLs to compare their similarity to the keyword.
@@ -1964,7 +2203,7 @@ with tab3:
     keyword_input = st.text_input(
         "Enter keyword:",
         placeholder="Enter your keyword here...",
-        key="tab3_keyword_input"
+        key="tab4_keyword_input"
     )
     
     # Get URLs input
@@ -1972,7 +2211,7 @@ with tab3:
         "Enter URLs to compare (one per line, max 10):",
         height=150,
         placeholder="https://example1.com\nhttps://example2.com\nhttps://example3.com",
-        key="tab3_urls_input"
+        key="tab4_urls_input"
     )
     
     if keyword_input and urls_input:
@@ -2139,7 +2378,7 @@ with tab3:
     else:
         st.warning("Please enter both a keyword and at least one URL to analyze.")
 
-with tab4:
+with tab5:
     st.subheader("Site Embedding Analysis")
     st.markdown("""
     Enter up to 10 URLs from the same site to analyze their content structure and relationships.
@@ -2155,7 +2394,7 @@ with tab4:
         "Enter URLs to analyze (one per line, max 10):",
         height=150,
         placeholder="https://example.com/page1\nhttps://example.com/page2\nhttps://example.com/page3",
-        key="tab4_urls_input"
+        key="tab5_urls_input"
     )
     
     if urls_input:
