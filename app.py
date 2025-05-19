@@ -84,6 +84,7 @@ def get_vertex_ai_token():
 
 def check_quota_status():
     """Check if we're approaching quota limits with improved error handling"""
+    # Initialize quota status with all required keys if not present
     if 'quota_status' not in st.session_state:
         st.session_state.quota_status = {
             'last_reset': time.time(),
@@ -91,8 +92,25 @@ def check_quota_status():
             'last_error_time': 0,
             'consecutive_errors': 0,
             'last_success_time': time.time(),
-            'total_requests': 0
+            'total_requests': 0,
+            'refresh_attempts': 0
         }
+    
+    # Ensure all required keys exist
+    required_keys = {
+        'last_reset': time.time(),
+        'requests_this_hour': 0,
+        'last_error_time': 0,
+        'consecutive_errors': 0,
+        'last_success_time': time.time(),
+        'total_requests': 0,
+        'refresh_attempts': 0
+    }
+    
+    # Add any missing keys with default values
+    for key, default_value in required_keys.items():
+        if key not in st.session_state.quota_status:
+            st.session_state.quota_status[key] = default_value
     
     current_time = time.time()
     quota_status = st.session_state.quota_status
@@ -102,6 +120,7 @@ def check_quota_status():
         quota_status['last_reset'] = current_time
         quota_status['requests_this_hour'] = 0
         quota_status['consecutive_errors'] = 0
+        quota_status['refresh_attempts'] = 0
     
     # Check if we've had too many consecutive errors
     if quota_status['consecutive_errors'] >= 3:
@@ -125,6 +144,7 @@ def check_quota_status():
 
 def update_quota_status(success=True):
     """Update quota status after a request with improved tracking"""
+    # Initialize quota status with all required keys if not present
     if 'quota_status' not in st.session_state:
         st.session_state.quota_status = {
             'last_reset': time.time(),
@@ -132,8 +152,25 @@ def update_quota_status(success=True):
             'last_error_time': 0,
             'consecutive_errors': 0,
             'last_success_time': time.time(),
-            'total_requests': 0
+            'total_requests': 0,
+            'refresh_attempts': 0
         }
+    
+    # Ensure all required keys exist
+    required_keys = {
+        'last_reset': time.time(),
+        'requests_this_hour': 0,
+        'last_error_time': 0,
+        'consecutive_errors': 0,
+        'last_success_time': time.time(),
+        'total_requests': 0,
+        'refresh_attempts': 0
+    }
+    
+    # Add any missing keys with default values
+    for key, default_value in required_keys.items():
+        if key not in st.session_state.quota_status:
+            st.session_state.quota_status[key] = default_value
     
     quota_status = st.session_state.quota_status
     current_time = time.time()
