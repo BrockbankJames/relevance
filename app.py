@@ -201,14 +201,13 @@ def extract_sections(html_content):
         
         # Get all content until the next heading of same or higher level
         current = heading.next_sibling
-        while current and not (isinstance(current, BeautifulSoup.Tag) and 
+        while current and not (hasattr(current, 'name') and 
                              current.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] and 
                              int(current.name[1]) <= int(heading.name[1])):
-            if isinstance(current, BeautifulSoup.Tag):
-                if current.name == 'p':
-                    text = current.get_text().strip()
-                    if text:
-                        section['content'].append(text)
+            if hasattr(current, 'name') and current.name == 'p':
+                text = current.get_text().strip()
+                if text:
+                    section['content'].append(text)
             current = current.next_sibling
         
         # Combine heading and content
@@ -228,6 +227,10 @@ def extract_sections(html_content):
                     'text': text
                 })
     
+    debug_log(f"Extracted {len(sections)} sections from HTML")
+    for i, section in enumerate(sections):
+        debug_log(f"Section {i+1} ({section['type']}): {section['text'][:100]}...")
+    
     return sections
 
 def scrape_webpage(url):
@@ -246,20 +249,32 @@ def scrape_webpage(url):
         encoded_url = urllib.parse.quote(url, safe=':/?=&')
         
         # Log the request details (for debugging)
-        debug_log(f"Original URL: {url}")
-        debug_log(f"Encoded URL: {encoded_url}")
+        debug_log(f"Scraping URL: {url}")
         
         # Make the request to ScrapingBee API with enhanced parameters
         params = {
             'api_key': api_key,
             'url': encoded_url,
-            'render_js': 'true',
-            'premium_proxy': 'true',
-            'wait': '5000',
-            'wait_for': 'body',
-            'block_resources': 'true'
+            'render_js': 'true',  # Enable JavaScript rendering
+            'premium_proxy': 'true',  # Use premium proxies
+            'wait': '5000',  # Wait 5 seconds for JavaScript
+            'wait_for': 'body',  # Wait for body element
+            'block_resources': 'true',  # Block unnecessary resources
+            'extract_rules': json.dumps({  # Extract specific elements
+                'headings': {
+                    'selector': 'h1, h2, h3, h4, h5, h6',
+                    'type': 'list',
+                    'output': 'text'
+                },
+                'paragraphs': {
+                    'selector': 'p',
+                    'type': 'list',
+                    'output': 'text'
+                }
+            })
         }
         
+        debug_log("Making request to ScrapingBee API...")
         api_url = "https://app.scrapingbee.com/api/v1/"
         response = requests.get(api_url, params=params)
         
@@ -268,21 +283,35 @@ def scrape_webpage(url):
             try:
                 error_data = response.json()
                 if 'error' in error_data:
-                    st.error(f"API Error: {error_data['error']}")
+                    st.error(f"ScrapingBee API Error: {error_data['error']}")
+                    if 'message' in error_data:
+                        st.error(f"Details: {error_data['message']}")
             except:
-                debug_log(f"Raw API Response: {response.text}")
+                debug_log(f"Raw ScrapingBee Response: {response.text}")
             return None
+        
+        debug_log("Successfully received response from ScrapingBee")
         
         # Extract sections using the new function
         sections = extract_sections(response.content)
         
         if not sections:
-            st.warning("No content sections found on the page. The page might be blocking access or have no text content.")
+            st.warning("""
+            No content sections found on the page. This could be because:
+            1. The page is blocking access
+            2. The page has no text content
+            3. The page structure is different than expected
+            
+            Try using a different URL or check if the page is accessible.
+            """)
+            debug_log("Raw HTML content received:")
+            debug_log(response.text[:500] + "...")  # Log first 500 chars of HTML
         
         return sections
     except Exception as e:
         st.error(f"Error scraping webpage: {str(e)}")
         debug_log(f"Scraping error details: {str(e)}")
+        debug_log(f"Error type: {type(e)}")
         return None
 
 def calculate_similarity(embedding1, embedding2):
