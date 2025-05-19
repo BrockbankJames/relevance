@@ -567,7 +567,7 @@ def extract_sections_from_json(json_data):
                     
                     # Process each heading and its content
                     current_section = None
-                    current_h3_section = None
+                    current_h3_content = []  # Store H3 content for the current section
                     
                     for i, heading in enumerate(headings):
                         # Skip if the heading is inside a non-content element
@@ -607,6 +607,11 @@ def extract_sections_from_json(json_data):
                         if heading.name in ['h1', 'h2']:
                             # Save previous section if it exists
                             if current_section:
+                                # Add any accumulated H3 content to the section
+                                if current_h3_content:
+                                    current_section['content'].extend(current_h3_content)
+                                    debug_log(f"Added {len(current_h3_content)} H3 content items to section")
+                                
                                 # Combine all content for the section
                                 if current_section['content']:
                                     current_section['text'] = f"{current_section['heading']} {' '.join(current_section['content'])}"
@@ -614,8 +619,6 @@ def extract_sections_from_json(json_data):
                                     sections.append(current_section)
                                     debug_log(f"Completed section: {current_section['heading'][:100]}")
                                     debug_log(f"Section text length: {len(current_section['text'])} characters")
-                                    if current_section['subsections']:
-                                        debug_log(f"Contains {len(current_section['subsections'])} subsections")
                             
                             # Start new main section
                             current_section = {
