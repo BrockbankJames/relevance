@@ -533,9 +533,9 @@ def extract_sections_from_json(json_data):
                     # Create a single soup object from all content
                     soup = BeautifulSoup(combined_html, 'html.parser')
                     
-                    # Remove all comments
-                    for comment in soup.find_all(text=lambda text: isinstance(text, Comment)):
-                        comment.extract()
+                    # Remove all script and style elements
+                    for element in soup.find_all(['script', 'style']):
+                        element.decompose()
                     
                     # Find and remove navigation elements by tag and class
                     nav_elements = []
@@ -547,10 +547,11 @@ def extract_sections_from_json(json_data):
                             nav_elements.extend(elements)
                     
                     # Find elements by class (case-insensitive)
+                    nav_classes = ['nav', 'navigation', 'menu', 'masthead', 'cookie', 'breadcrumb', 'footer']
                     for element in soup.find_all(class_=True):
                         if element and element.name:  # Ensure element is not None and has a name
                             classes = ' '.join(element.get('class', [])).lower()
-                            if any(nav_term in classes for nav_term in ['nav', 'navigation', 'menu', 'masthead', 'cookie']):
+                            if any(nav_class in classes for nav_class in nav_classes):
                                 nav_elements.append(element)
                     
                     # Log and remove found navigation elements
@@ -588,10 +589,10 @@ def extract_sections_from_json(json_data):
                         if not heading or not heading.name:  # Skip None or invalid headings
                             continue
                             
-                        # Skip headings that are part of navigation or cookies
+                        # Skip headings that are part of navigation
                         heading_classes = ' '.join(heading.get('class', [])).lower()
-                        if any(nav_term in heading_classes for nav_term in ['nav', 'navigation', 'menu', 'masthead', 'cookie']):
-                            debug_log(f"\nSkipping navigation/cookie heading: {heading.get_text().strip()}")
+                        if any(nav_class in heading_classes for nav_class in nav_classes):
+                            debug_log(f"\nSkipping navigation heading: {heading.get_text().strip()}")
                             debug_log(f"Classes: {heading.get('class', [])}")
                             continue
                         
@@ -631,11 +632,11 @@ def extract_sections_from_json(json_data):
                                              current.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] and 
                                              int(current.name[1]) <= int(heading.name[1])):
                             if hasattr(current, 'name'):
-                                # Skip elements that are part of navigation or cookies
+                                # Skip elements that are part of navigation
                                 if current.get('class'):
                                     current_classes = ' '.join(current.get('class', [])).lower()
-                                    if any(nav_term in current_classes for nav_term in ['nav', 'navigation', 'menu', 'masthead', 'cookie']):
-                                        debug_log(f"\nSkipping navigation/cookie content: {current.get_text().strip()[:100]}")
+                                    if any(nav_class in current_classes for nav_class in nav_classes):
+                                        debug_log(f"\nSkipping navigation content: {current.get_text().strip()[:100]}")
                                         debug_log(f"Classes: {current.get('class', [])}")
                                         current = current.next_sibling
                                         continue
@@ -675,10 +676,10 @@ def extract_sections_from_json(json_data):
                     content_elements = []
                     for element in body.descendants:
                         if element and element.name and element.name not in ['script', 'style', 'meta', 'link']:
-                            # Skip elements that are part of navigation or cookies
+                            # Skip elements that are part of navigation
                             if element.get('class'):
                                 element_classes = ' '.join(element.get('class', [])).lower()
-                                if any(nav_term in element_classes for nav_term in ['nav', 'navigation', 'menu', 'masthead', 'cookie']):
+                                if any(nav_class in element_classes for nav_class in nav_classes):
                                     continue
                             
                             text = element.get_text().strip()
