@@ -506,7 +506,7 @@ def extract_sections(html_content):
     
     return sections
 
-def extract_sections_from_json(json_data):
+def extract_sections_from_json(json_data, header_footer_content=None):
     """Extract sections from ScrapingBee JSON response, maintaining proper heading hierarchy"""
     debug_log("Processing JSON response...")
     sections = []
