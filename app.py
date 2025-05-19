@@ -885,6 +885,8 @@ def scrape_webpage(url):
                             
                             # Process elements in document order, handling containers with H1s specially
                             processed_h1s = set()  # Track processed H1 elements
+                            current_h1_section = None  # Track current H1 section
+                            
                             for element in soup.find_all(['div', 'section', 'article', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
                                 if element and element.parent:  # Check if element exists and has a parent
                                     # Skip elements that are part of navigation
@@ -931,14 +933,16 @@ def scrape_webpage(url):
                                             
                                             if container_text:
                                                 debug_log(f"Container text content: {container_text[0][:100]}")
-                                                content_elements.append({
+                                                # Create a new H1 section with all container content
+                                                current_h1_section = {
                                                     'type': 'h1-container',
                                                     'text': ' '.join(container_text),
                                                     'heading': container_text[0],  # Use first text as heading
                                                     'content': container_text[1:],  # Rest as content
                                                     'level': 1,
                                                     'is_container': True
-                                                })
+                                                }
+                                                content_elements.append(current_h1_section)
                                                 processed_h1s.add(h1_in_container)  # Mark this H1 as processed
                                             continue
                                     
@@ -947,31 +951,46 @@ def scrape_webpage(url):
                                         if element not in processed_h1s:  # Only process H1 if not already processed
                                             text = element.get_text().strip()
                                             if text and len(text.split()) > 2:
-                                                content_elements.append({
+                                                # Start a new H1 section
+                                                current_h1_section = {
                                                     'type': 'h1',
                                                     'text': text,
                                                     'heading': text,
+                                                    'content': [],
                                                     'level': 1
-                                                })
+                                                }
+                                                content_elements.append(current_h1_section)
                                                 processed_h1s.add(element)  # Mark this H1 as processed
-                                    elif element.name.startswith('h'):  # Process other headings normally
+                                                debug_log(f"\nCreated new H1 section: {text[:100]}")
+                                    elif element.name.startswith('h'):  # Process other headings
+                                        # If we have a current H1 section, complete it
+                                        if current_h1_section and element.name == 'h2':
+                                            current_h1_section = None
+                                        
                                         text = element.get_text().strip()
                                         if text and len(text.split()) > 2:
                                             content_elements.append({
                                                 'type': element.name,
                                                 'text': text,
                                                 'heading': text,
+                                                'content': [],
                                                 'level': int(element.name[1])
                                             })
                                     else:  # Process non-heading elements
                                         text = element.get_text().strip()
                                         if text and len(text.split()) > 2:
-                                            content_elements.append({
-                                                'type': element.name,
-                                                'text': text,
-                                                'heading': None,
-                                                'level': 0
-                                            })
+                                            if current_h1_section:  # Add content to current H1 section
+                                                current_h1_section['content'].append(text)
+                                                current_h1_section['text'] = f"{current_h1_section['heading']} {' '.join(current_h1_section['content'])}"
+                                                debug_log(f"Added content to H1 section: {text[:100]}")
+                                            else:  # Create a regular content element
+                                                content_elements.append({
+                                                    'type': element.name,
+                                                    'text': text,
+                                                    'heading': None,
+                                                    'content': [text],
+                                                    'level': 0
+                                                })
                             
                             if content_elements:
                                 debug_log("\nCreating sections from content elements...")
