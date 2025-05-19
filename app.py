@@ -224,8 +224,35 @@ def get_cached_embedding(texts, batch_size=5):
     
     for i, (text, text_hash) in enumerate(zip(texts, text_hashes)):
         if text_hash in st.session_state.embeddings_cache:
-            debug_log(f"Using cached embedding for text {i+1}")
-            cached_embeddings.append(st.session_state.embeddings_cache[text_hash])
+            cached_embedding = st.session_state.embeddings_cache[text_hash]
+            # Ensure cached embedding is a numpy array
+            if isinstance(cached_embedding, (np.ndarray, list, tuple)):
+                if isinstance(cached_embedding, np.ndarray):
+                    if cached_embedding.ndim == 1:
+                        debug_log(f"Using cached embedding for text {i+1}, shape: {cached_embedding.shape}")
+                        cached_embeddings.append(cached_embedding)
+                        continue
+                    else:
+                        debug_log(f"Invalid cached embedding dimension for text {i+1}, regenerating")
+                else:
+                    # Convert list/tuple to numpy array
+                    try:
+                        cached_embedding = np.array(cached_embedding, dtype=np.float32)
+                        if cached_embedding.ndim == 1:
+                            debug_log(f"Converted cached embedding to numpy array for text {i+1}, shape: {cached_embedding.shape}")
+                            cached_embeddings.append(cached_embedding)
+                            st.session_state.embeddings_cache[text_hash] = cached_embedding
+                            continue
+                        else:
+                            debug_log(f"Invalid converted embedding dimension for text {i+1}, regenerating")
+                    except Exception as e:
+                        debug_log(f"Error converting cached embedding for text {i+1}: {str(e)}")
+            else:
+                debug_log(f"Invalid cached embedding type for text {i+1}: {type(cached_embedding)}")
+            
+            # If we get here, the cached embedding was invalid
+            texts_to_generate.append(text)
+            indices_to_generate.append(i)
         else:
             texts_to_generate.append(text)
             indices_to_generate.append(i)
@@ -235,16 +262,50 @@ def get_cached_embedding(texts, batch_size=5):
         new_embeddings = get_embedding(texts_to_generate, batch_size)
         
         if new_embeddings is not None:
-            # Cache the new embeddings
-            for i, embedding in zip(indices_to_generate, new_embeddings):
-                st.session_state.embeddings_cache[text_hashes[i]] = embedding
-                cached_embeddings.append(embedding)
+            # Ensure new embeddings are numpy arrays
+            if isinstance(new_embeddings, list):
+                for i, embedding in enumerate(new_embeddings):
+                    if not isinstance(embedding, np.ndarray):
+                        try:
+                            embedding = np.array(embedding, dtype=np.float32)
+                        except Exception as e:
+                            debug_log(f"Error converting new embedding to numpy array: {str(e)}")
+                            continue
+                    if embedding.ndim != 1:
+                        debug_log(f"Invalid new embedding dimension: {embedding.ndim}")
+                        continue
+                    st.session_state.embeddings_cache[text_hashes[indices_to_generate[i]]] = embedding
+                    cached_embeddings.append(embedding)
+            else:
+                # Single embedding case
+                if not isinstance(new_embeddings, np.ndarray):
+                    try:
+                        new_embeddings = np.array(new_embeddings, dtype=np.float32)
+                    except Exception as e:
+                        debug_log(f"Error converting single new embedding to numpy array: {str(e)}")
+                        return None
+                if new_embeddings.ndim != 1:
+                    debug_log(f"Invalid single new embedding dimension: {new_embeddings.ndim}")
+                    return None
+                st.session_state.embeddings_cache[text_hashes[indices_to_generate[0]]] = new_embeddings
+                cached_embeddings.append(new_embeddings)
+            
             debug_log("Successfully cached new embeddings")
     
     if not cached_embeddings:
+        debug_log("No valid embeddings generated or cached")
         return None
         
-    return cached_embeddings[0] if len(texts) == 1 else cached_embeddings
+    # Return single embedding for single text input, list for multiple texts
+    result = cached_embeddings[0] if len(texts) == 1 else cached_embeddings
+    debug_log(f"Returning embeddings of type: {type(result)}")
+    if isinstance(result, np.ndarray):
+        debug_log(f"Returning numpy array with shape: {result.shape}")
+    elif isinstance(result, list):
+        debug_log(f"Returning list of {len(result)} embeddings")
+        for i, emb in enumerate(result):
+            debug_log(f"Embedding {i+1} type: {type(emb)}, shape: {emb.shape if hasattr(emb, 'shape') else 'no shape'}")
+    return result
 
 def extract_sections(html_content):
     """Extract content sections from HTML, properly handling nested tags"""
